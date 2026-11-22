@@ -130,9 +130,9 @@ export async function render(el, params) {
     T.innerHTML = `<section class="card">
       <div class="head"><h2>Piezas usadas</h2><button type="button" class="btn pri" data-add>${I.plus} Añadir pieza del almacén</button></div>
       <p class="muted small" style="margin:0">Al añadir una pieza se descuenta del stock. Si la quitas, vuelve al almacén.</p>
-      <div class="tablewrap"><table><thead><tr><th>Ref.</th><th>Pieza</th><th class="right">Cant.</th><th class="right">PVP</th><th class="right">Importe</th><th></th></tr></thead><tbody>
-      ${piezas.map((p) => `<tr><td class="small">${esc(p.piezas.referencia)}</td><td>${esc(p.piezas.nombre)}</td><td class="right num">${p.cantidad}</td><td class="right num">${money(p.pvp)}</td><td class="right num">${money(p.cantidad * p.pvp)}</td><td class="right"><button type="button" class="btn sm danger" data-del="${p.id}">Quitar</button></td></tr>`).join('') || '<tr><td colspan="6" class="empty">Sin piezas</td></tr>'}
-      </tbody><tfoot><tr><td colspan="4" class="right">Total piezas</td><td class="right num">${money(totPiezas)}</td><td></td></tr></tfoot></table></div></section>`;
+      <div class="tablewrap"><table><thead><tr><th class="hide-movil">Ref.</th><th>Pieza</th><th class="right">Cant.</th><th class="right">PVP</th><th class="right">Importe</th><th></th></tr></thead><tbody>
+      ${piezas.map((p) => `<tr><td class="small hide-movil">${esc(p.piezas.referencia)}</td><td>${esc(p.piezas.nombre)}<div class="small muted">${esc(p.piezas.referencia)}</div></td><td class="right num">${p.cantidad}</td><td class="right num">${money(p.pvp)}</td><td class="right num">${money(p.cantidad * p.pvp)}</td><td class="right"><button type="button" class="btn sm danger" data-del="${p.id}">Quitar</button></td></tr>`).join('') || '<tr><td colspan="6" class="empty">Sin piezas</td></tr>'}
+      </tbody><tfoot><tr><td class="hide-movil"></td><td colspan="3" class="right">Total piezas</td><td class="right num">${money(totPiezas)}</td><td></td></tr></tfoot></table></div></section>`;
     T.querySelector('[data-add]').addEventListener('click', () => anadirPieza(id, recargar));
     T.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', async () => {
       if (!(await confirmar('¿Quitar esta pieza? Volverá al stock del almacén.', 'Quitar'))) return;

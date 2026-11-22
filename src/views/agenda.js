@@ -1,8 +1,9 @@
-import { sb, state, esc, attr, ok, ftime, fdatel, isoDay, today, chip, ESTADOS_CITA, nombreTecnico, colorTecnico, modal, opt, toast, fail, tecnicoOpts, esEscritorio, confirmar } from '../lib.js';
+import { sb, state, esc, attr, ok, ftime, fdatel, cap, isoDay, today, chip, ESTADOS_CITA, nombreTecnico, colorTecnico, modal, opt, toast, fail, tecnicoOpts, esEscritorio, confirmar } from '../lib.js';
 import { I } from '../icons.js';
 
 const addDays = (d, n) => { const x = new Date(d + 'T12:00:00'); x.setDate(x.getDate() + n); return isoDay(x); };
-const lunes = (d) => { const x = new Date(d + 'T12:00:00'); const w = (x.getDay() + 6) % 7; x.setDate(x.getDate() - w); return isoDay(x); };
+// La semana del taller es de lunes a sábado: el domingo muestra la semana siguiente
+const lunes = (d) => { const x = new Date(d + 'T12:00:00'); if (x.getDay() === 0) x.setDate(x.getDate() + 1); const w = (x.getDay() + 6) % 7; x.setDate(x.getDate() - w); return isoDay(x); };
 
 export async function render(el, params) {
   const d = /^\d{4}-\d{2}-\d{2}$/.test(params.d || '') ? params.d : today();
@@ -33,7 +34,7 @@ export async function render(el, params) {
       const cs = citas.filter((c) => isoDay(c.inicio) === dia);
       const f = new Date(dia + 'T12:00:00');
       return `<div class="wday ${dia === today() ? 'today' : ''}">
-        <h3><span>${esc(f.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric' }))}</span><a href="#/cita/nueva?d=${dia}" aria-label="Nueva cita el ${attr(dia)}">+</a></h3>
+        <h3><span>${esc(cap(f.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric' })))}</span><a href="#/cita/nueva?d=${dia}" aria-label="Nueva cita el ${attr(dia)}">+</a></h3>
         ${cs.map(citaBtn).join('') || '<span class="muted small">Libre</span>'}
       </div>`;
     }).join('') + '</div>';

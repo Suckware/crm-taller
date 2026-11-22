@@ -20,7 +20,7 @@ export async function render(el) {
 
   el.innerHTML = `
   <div class="head">
-    <div class="t"><h1>${saludo}, ${esc(state.perfil.nombre.split(' ')[0])}</h1><div class="muted" style="text-transform:capitalize">${esc(fdatel(new Date()))}</div></div>
+    <div class="t"><h1>${saludo}, ${esc(state.perfil.nombre.split(' ')[0])}</h1><div class="muted">${esc(fdatel(new Date()))}</div></div>
     <div class="actions"><a class="btn" href="#/recepcion">Recibir moto</a><a class="btn pri" href="#/cita/nueva?d=${today()}">+ Nueva cita</a></div>
   </div>
   <div class="kpis">

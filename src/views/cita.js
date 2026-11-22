@@ -20,7 +20,7 @@ export async function render(el, params) {
         <div class="field"><label for="n-fecha">Día</label><input id="n-fecha" type="date" class="inp" value="${attr(st.fecha)}" min="${today()}"></div>
         <div class="field"><label for="n-dur">Duración (min)</label><input id="n-dur" type="number" class="inp" min="10" max="600" step="5" value="${st.dur}"></div>
       </div>
-      <div class="lbl" data-dia style="text-transform:capitalize"></div>
+      <div class="lbl" data-dia></div>
       <div class="slots" data-slots></div>
       <div class="field"><label for="n-notas">Notas para el taller</label><textarea id="n-notas" class="inp" maxlength="1000" placeholder="Ej.: ruido en la transmisión, trae neumáticos propios…"></textarea></div>
       <div data-resumen class="muted"></div>
@@ -82,7 +82,7 @@ function confirmada(el, c, st) {
     <div style="width:72px;height:72px;border-radius:50%;background:var(--ok-bg);color:var(--ok);display:grid;place-items:center;font-size:36px" aria-hidden="true">✓</div>
     <h1>Cita confirmada</h1>
     <p style="margin:0"><b>${esc(st.cliente.nombre)}</b>${st.moto ? `<br><span class="muted">${esc(st.moto.marca + ' ' + st.moto.modelo + ' · ' + (st.moto.matricula || ''))}</span>` : ''}</p>
-    <p style="margin:0;text-transform:capitalize"><b>${esc(fdatel(c.inicio))}</b> · ${esc(ftime(c.inicio))}</p>
+    <p style="margin:0"><b>${esc(fdatel(c.inicio))}</b> · ${esc(ftime(c.inicio))}</p>
     <p class="muted" style="margin:0">${esc(c.servicio)} · ${esc(c.tecnico_id ? nombreTecnico(c.tecnico_id) : 'sin técnico')}</p>
     <div class="actions" style="justify-content:center;width:100%">
       <a class="btn" href="#/agenda?d=${isoDay(c.inicio)}&v=dia">Ver en la agenda</a>
