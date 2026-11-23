@@ -113,7 +113,7 @@ export function formCliente(c = {}, { completo = true } = {}) {
     ${field('Email', 'email', c.email, 'email', 'maxlength="120"')}
     ${completo ? field('Web', 'web', c.web, 'url', 'maxlength="120"') : ''}
     ${field('Dirección', 'direccion', c.direccion, 'text', 'maxlength="200"')}
-    ${completo ? field('Código postal', 'codigo_postal', c.codigo_postal, 'text', 'maxlength="10" inputmode="numeric"') + field('Población', 'poblacion', c.poblacion, 'text', 'maxlength="80"') + field('Provincia', 'provincia', c.provincia, 'text', 'maxlength="60"') : ''}
+    ${field('Código postal', 'codigo_postal', c.codigo_postal, 'text', 'maxlength="5" inputmode="numeric" autocomplete="off" placeholder="Ej.: 35500"') + field('Población', 'poblacion', c.poblacion, 'text', 'maxlength="80"') + field('Provincia', 'provincia', c.provincia, 'text', 'maxlength="60"')}
     <div class="field"><label for="f-tar">Tarifa</label><select id="f-tar" name="tarifa_id">${opt('', '—', c.tarifa_id ?? '')}${state.tarifas.filter((t) => t.activa || t.id === c.tarifa_id).map((t) => opt(t.id, `${t.nombre}${Number(t.descuento_pct) ? ` (${Number(t.descuento_pct)} %)` : ''}`, c.tarifa_id)).join('')}</select></div>
     ${field('Descuento fijo (%)', 'descuento_pct', c.descuento_pct ?? 0, 'number', 'min="0" max="100" step="0.5"')}
     <div class="field full"><label for="f-na">Notas que se muestran al agendar</label><textarea id="f-na" name="notas_agenda" maxlength="500" placeholder="Ej.: solo puede por las tardes, avisar antes de superar el presupuesto…">${esc(c.notas_agenda || '')}</textarea></div>

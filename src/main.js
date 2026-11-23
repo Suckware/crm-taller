@@ -6,6 +6,7 @@ import '@fontsource/plus-jakarta-sans/800.css';
 import './styles.css';
 import { sb, state, esc, attr, toast, cargarComunes, DOMINIO_USUARIOS, puedeFacturar, esAdmin } from './lib.js';
 import { I } from './icons.js';
+import { activarCodigoPostal } from './cp.js';
 import * as panel from './views/panel.js';
 import * as agenda from './views/agenda.js';
 import * as cita from './views/cita.js';
@@ -170,3 +171,4 @@ sb.auth.onAuthStateChange((ev) => {
   else renderLogin();
 })();
 
+activarCodigoPostal();
