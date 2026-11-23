@@ -13,8 +13,8 @@ export function selectorClienteMoto(root, onChange, inicial = {}) {
   const st = { cliente: inicial.cliente || null, moto: inicial.moto || null, motos: [] };
   root.innerHTML = `
     <div class="field"><label for="bc">Cliente</label>
-      <input id="bc" type="search" class="inp" placeholder="Nombre, teléfono o matrícula…" autocomplete="off" maxlength="60"></div>
-    <div data-res class="list"></div>
+      <div class="combo"><input id="bc" type="search" class="inp" placeholder="Elige o busca un cliente…" autocomplete="off" maxlength="60"><button type="button" class="combo-btn" data-abrir aria-label="Ver todos los clientes">▾</button></div></div>
+    <div data-res class="list desplegable"></div>
     <div data-sel></div>`;
   const inp = root.querySelector('#bc');
   const res = root.querySelector('[data-res]');
@@ -24,7 +24,11 @@ export function selectorClienteMoto(root, onChange, inicial = {}) {
 
   async function buscar(t) {
     const s = limpiar(t);
-    if (s.length < 2) { res.innerHTML = ''; return; }
+    if (s.length < 2) {
+      // sin texto: despliega todos los clientes por orden alfabético
+      const todos = ok(await sb.from('clientes').select(COLS).eq('es_cliente', true).order('nombre').limit(200));
+      return pintarLista(todos, '');
+    }
     const [a, b, c] = await Promise.all([
       sb.from('clientes').select(COLS).eq('es_cliente', true).or(`nombre.ilike.%${s}%,telefono.ilike.%${s}%,nombre_comercial.ilike.%${s}%`).limit(8),
       sb.from('motos').select(`cliente_id,clientes(${COLS})`).or(`matricula.ilike.%${s}%,bastidor.ilike.%${s}%`).limit(5),
@@ -32,12 +36,20 @@ export function selectorClienteMoto(root, onChange, inicial = {}) {
     ]);
     const lista = [...(a.data || [])];
     [...(b.data || []), ...(c.data || [])].forEach((m) => { if (m.clientes && !lista.find((x) => x.id === m.clientes.id)) lista.push(m.clientes); });
-    res.innerHTML = lista.map((c) => `<button type="button" class="linkbtn" data-c="${c.id}" style="text-align:left;color:inherit;font-weight:400"><span class="grow"><b>${esc(c.nombre)}</b><span class="muted small">${esc(c.telefono || '')}${c.notas_agenda ? ' · tiene notas' : ''}</span></span></button>`).join('')
-      + `<button type="button" class="linkbtn" data-nuevo>+ Crear cliente nuevo${s ? ` «${esc(s)}»` : ''}</button>`;
+    pintarLista(lista, s);
+  }
+  function pintarLista(lista, s) {
+    res.innerHTML = `<button type="button" class="linkbtn nuevo" data-nuevo>+ Crear cliente nuevo${s ? ` «${esc(s)}»` : ''}</button>`
+      + (lista.length ? '' : '<div class="muted small" style="padding:8px 4px">No hay clientes que coincidan</div>')
+      + lista.map((c) => `<button type="button" class="linkbtn" data-c="${c.id}" style="text-align:left;color:inherit;font-weight:400"><span class="grow"><b>${esc(c.nombre)}</b><span class="muted small">${esc(c.telefono || '')}${c.notas_agenda ? ' · tiene notas' : ''}</span></span></button>`).join('');
     res.querySelectorAll('[data-c]').forEach((b) => b.addEventListener('click', () => elegir(lista.find((c) => c.id == b.dataset.c))));
     res.querySelector('[data-nuevo]').addEventListener('click', () => nuevoCliente(s, elegir));
   }
   inp.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => buscar(inp.value), 250); });
+  inp.addEventListener('focus', () => { if (!res.innerHTML) buscar(inp.value); });
+  root.querySelector('[data-abrir]').addEventListener('click', () => { if (res.innerHTML) res.innerHTML = ''; else buscar(inp.value); });
+  const fuera = (e) => { if (!root.isConnected) return document.removeEventListener('pointerdown', fuera); if (!root.contains(e.target) && !e.target.closest('.modal, .overlay')) res.innerHTML = ''; };
+  document.addEventListener('pointerdown', fuera);
 
   async function elegir(c, motoId) {
     res.innerHTML = ''; inp.value = '';
