@@ -175,12 +175,30 @@ tfoot td { font-weight: 700; border-bottom: 0; }
 .swatch { width: 44px; height: 44px; border-radius: 50%; border: 3px solid #fff; box-shadow: 0 0 0 1px #DDE1EB; cursor: pointer; }
 .swatch.on { box-shadow: 0 0 0 3px var(--ink); }
 
+/* Menú lateral plegado (solo iconos); se despliega por encima del contenido */
+.fijar { display: flex; align-items: center; gap: 12px; padding: 10px 14px; margin: 6px 0; border: 0; border-radius: 12px; background: none; color: #94A3B8; font: inherit; font-size: 13px; cursor: pointer; text-align: left; white-space: nowrap; }
+.fijar:hover { background: rgba(255,255,255,.06); color: #fff; }
+.fijar svg { width: 18px; height: 18px; flex-shrink: 0; }
+.side { transition: width .18s ease, margin-right .18s ease, box-shadow .18s ease; z-index: 30; overflow-x: hidden; }
+.nav a, .brand, .fijar { white-space: nowrap; }
+.shell.plegado .side { width: 76px; padding: 18px 10px; }
+.shell.plegado .side .brand div, .shell.plegado .side .nav a span, .shell.plegado .side .fijar span, .shell.plegado .side .me { display: none; }
+.shell.plegado .side .brand { padding: 0 6px 18px; }
+.shell.plegado .side .nav a { padding: 12px 18px; }
+.shell.plegado .side .fijar { padding: 10px 19px; }
+.shell.plegado .side.abierto:not(.cerrando) { width: 248px; margin-right: -172px; padding: 18px 14px; box-shadow: 16px 0 40px -12px rgba(15,23,42,.5); }
+.shell.plegado .side.abierto:not(.cerrando) :is(.brand div, .nav a span, .fijar span) { display: block; }
+.shell.plegado .side.abierto:not(.cerrando) .me { display: flex; }
+.shell.plegado .side.abierto:not(.cerrando) .nav a { padding: 12px 14px; }
+@media (hover: hover) {
+  .shell.plegado .side:hover:not(.cerrando) { width: 248px; margin-right: -172px; padding: 18px 14px; box-shadow: 16px 0 40px -12px rgba(15,23,42,.5); transition-delay: .12s; }
+  .shell.plegado .side:hover:not(.cerrando) :is(.brand div, .nav a span, .fijar span) { display: block; }
+  .shell.plegado .side:hover:not(.cerrando) .me { display: flex; }
+  .shell.plegado .side:hover:not(.cerrando) .nav a { padding: 12px 14px; }
+}
+
 /* Tablet */
 @media (max-width: 1100px) {
-  .side { width: 76px; padding: 18px 10px; }
-  .brand div, .nav a span, .me { display: none; }
-  .brand { justify-content: center; padding-bottom: 18px; }
-  .nav a { justify-content: center; padding: 13px; }
   .main { padding: 22px 22px 40px; }
   .week { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .solo-escritorio { display: none !important; }

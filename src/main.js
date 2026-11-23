@@ -56,11 +56,12 @@ function shell(active) {
     .map(([h, k, t, ic]) => `<a href="${h}" class="${k === active ? 'on' : ''}">${ic}<span>${esc(t)}</span></a>`).join('');
   const rolTxt = { admin: 'Administrador', recepcion: 'Recepción', comercial: 'Comercial', mecanico: 'Mecánico' }[state.perfil.rol];
   app.innerHTML = `
-  <div class="shell">
+  <div class="shell ${menuFijo() ? '' : 'plegado'}">
     <nav class="side" aria-label="Principal">
       <a class="brand" href="#/"><img src="./logo.png" alt="Logo de ${attr(cfg.nombre_taller)}"><div><b>${esc(cfg.nombre_taller)}</b><span>Gestión del taller</span></div></a>
       <div class="nav">${nav}</div>
       <div class="grow"></div>
+      <button type="button" class="fijar" data-fijar title="Dejar el menú siempre abierto">${I.pin}<span>${menuFijo() ? 'Plegar el menú' : 'Fijar menú abierto'}</span></button>
       <div class="me"><strong>${esc(state.perfil.nombre)}</strong><span>${esc(rolTxt)}</span><button type="button" data-salir>Cerrar sesión</button></div>
     </nav>
     <div style="flex:1;min-width:0;display:flex;flex-direction:column">
@@ -70,7 +71,31 @@ function shell(active) {
     <nav class="bottomnav" aria-label="Accesos rápidos">${bottom}</nav>
   </div>`;
   app.querySelectorAll('[data-salir]').forEach((b) => b.addEventListener('click', salir));
+  menuPlegable();
   return document.getElementById('view');
+}
+
+// Menú lateral plegado: solo iconos; se abre al pasar el ratón (en tablet, al tocar) y se pliega al elegir.
+function menuFijo() { try { return localStorage.getItem('menu_fijo') === '1'; } catch { return false; } }
+function menuPlegable() {
+  const shellEl = app.querySelector('.shell'); const side = app.querySelector('.side');
+  if (!shellEl || !side) return;
+  const tactil = () => !window.matchMedia('(hover: hover)').matches;
+  side.querySelector('[data-fijar]').addEventListener('click', () => {
+    const fijo = !menuFijo();
+    try { localStorage.setItem('menu_fijo', fijo ? '1' : '0'); } catch { /* sin almacenamiento: solo esta vez */ }
+    shellEl.classList.toggle('plegado', !fijo); side.classList.remove('abierto');
+    side.querySelector('[data-fijar] span').textContent = fijo ? 'Plegar el menú' : 'Fijar menú abierto';
+  });
+  side.addEventListener('click', (e) => {
+    if (!shellEl.classList.contains('plegado')) return;
+    const a = e.target.closest('a');
+    // en pantalla táctil, el primer toque abre el menú; el segundo elige
+    if (tactil() && !side.classList.contains('abierto')) { e.preventDefault(); side.classList.add('abierto'); return; }
+    if (a) { side.classList.remove('abierto'); side.classList.add('cerrando'); }
+  });
+  side.addEventListener('mouseleave', () => side.classList.remove('cerrando'));
+  document.addEventListener('pointerdown', (e) => { if (!side.contains(e.target)) side.classList.remove('abierto'); });
 }
 
 async function salir() {
