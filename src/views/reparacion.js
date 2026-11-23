@@ -1,6 +1,7 @@
 import { sb, state, esc, attr, ok, money, fdate, fdt, today, chip, ESTADOS_REP, nombreTecnico, tecnicoOpts, opt, toast, fail, modal, confirmar, puedeFacturar, esOficina } from '../lib.js';
 import { CONDICIONES_DEF, firmaPad } from './recepcion.js';
 import { I } from '../icons.js';
+import { avisoNotas, alertasVehiculo } from './comun.js';
 
 const firmaOk = (f) => typeof f === 'string' && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(f);
 
@@ -40,7 +41,8 @@ export async function render(el, params) {
   const T = el.querySelector('[data-tab]');
 
   if (tab === 'resumen') {
-    T.innerHTML = `
+    const al = alertasVehiculo(r.motos);
+    T.innerHTML = `${avisoNotas(r.clientes)}${al.length ? `<div class="aviso">${al.map((x) => `<span>${esc(x)}</span>`).join('')}</div>` : ''}
     <div class="kpis">
       <div class="kpi"><span class="l">Entrada</span><span class="v" style="font-size:20px">${fdate(r.fecha_entrada)}</span><span class="l">${r.km_entrada ? r.km_entrada.toLocaleString('es-ES') + ' km' : ''}</span></div>
       <div class="kpi"><span class="l">Técnico</span><span class="v" style="font-size:20px">${esc(nombreTecnico(r.tecnico_id))}</span><span class="l">${r.fecha_prevista ? 'Entrega prevista ' + fdate(r.fecha_prevista) : 'Sin fecha prevista'}</span></div>
@@ -203,11 +205,13 @@ async function anadirPieza(repId, recargar) {
 function apuntarHoras(repId, r, recargar) {
   const yo = state.perfil.id;
   const tec = state.perfiles.find((p) => p.id === (r.tecnico_id || yo)) || state.perfil;
+  const tarifa = state.tarifas.find((t) => t.id === r.clientes?.tarifa_id);
+  const precioDe = (p) => (tarifa?.precio_hora != null ? tarifa.precio_hora : p?.precio_hora || state.config.precio_hora);
   modal('Apuntar horas', `<div class="form">
     <div class="field"><label for="h-tec">Mecánico</label><select id="h-tec" name="tecnico_id">${tecnicoOpts(tec.id, false)}</select></div>
     <div class="field"><label for="h-f">Fecha</label><input id="h-f" type="date" name="fecha" value="${today()}" max="${today()}"></div>
     <div class="field"><label for="h-h">Horas</label><input id="h-h" type="number" name="horas" min="0.25" max="24" step="0.25" value="1" inputmode="decimal"></div>
-    <div class="field"><label for="h-p">Precio por hora (€)</label><input id="h-p" type="number" name="precio_hora" min="0" step="0.5" value="${attr(tec.precio_hora || state.config.precio_hora)}" ${esOficina() ? '' : 'readonly'}></div>
+    <div class="field"><label for="h-p">Precio por hora (€)</label><input id="h-p" type="number" name="precio_hora" min="0" step="0.5" value="${attr(precioDe(tec))}" ${esOficina() ? '' : 'readonly'}></div>${tarifa?.precio_hora != null ? `<p class="small muted full" style="margin:0">Precio de la tarifa «${esc(tarifa.nombre)}» del cliente.</p>` : ''}
     <div class="field full"><label for="h-d">Trabajo realizado</label><input id="h-d" name="descripcion" maxlength="200" placeholder="Ej.: desmontaje de horquilla y cambio de retenes"></div>
   </div>`, {
     okText: 'Apuntar',
@@ -221,5 +225,5 @@ function apuntarHoras(repId, r, recargar) {
     },
   });
   const sel = document.getElementById('h-tec');
-  sel.addEventListener('change', () => { const p = state.perfiles.find((x) => x.id === sel.value); if (p) document.getElementById('h-p').value = p.precio_hora; });
+  sel.addEventListener('change', () => { const p = state.perfiles.find((x) => x.id === sel.value); if (p) document.getElementById('h-p').value = precioDe(p); });
 }

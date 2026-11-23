@@ -9,7 +9,7 @@ const TEMAS = [
 export async function render(el, params) {
   const adm = esAdmin();
   const tab = params.t || (adm ? 'taller' : 'perfil');
-  const tabs = adm ? [['taller', 'Datos del taller'], ['apariencia', 'Logo y colores'], ['impuestos', 'Impuestos'], ['usuarios', 'Usuarios y permisos'], ['perfil', 'Mi perfil']] : [['perfil', 'Mi perfil']];
+  const tabs = adm ? [['taller', 'Datos del taller'], ['apariencia', 'Logo y colores'], ['impuestos', 'Impuestos'], ['tarifas', 'Tarifas'], ['campos', 'Campos personalizados'], ['usuarios', 'Usuarios y permisos'], ['perfil', 'Mi perfil']] : [['perfil', 'Mi perfil']];
   el.innerHTML = `<div class="head"><div class="t"><h1>Configuración</h1><div class="muted">${adm ? 'Solo el administrador puede cambiar estos ajustes' : 'Los ajustes del taller los gestiona el administrador'}</div></div></div>
   <nav class="tabs">${tabs.map(([k, t]) => `<a href="#/config?t=${k}" class="${k === tab ? 'on' : ''}">${t}</a>`).join('')}</nav><div data-tab></div>`;
   const T = el.querySelector('[data-tab]');
@@ -96,6 +96,41 @@ export async function render(el, params) {
       const i = I.find((x) => x.id == b.dataset.act);
       if (i.por_defecto && i.activo) return toast('No puedes desactivar el impuesto por defecto', true);
       try { ok(await sb.from('impuestos').update({ activo: !i.activo }).eq('id', i.id)); recargar(); } catch (e) { fail(e); }
+    }));
+  }
+
+  if (tab === 'tarifas') {
+    const Tt = ok(await sb.from('tarifas').select('*').order('id'));
+    T.innerHTML = `<section class="card" style="max-width:860px"><div class="head"><h2>Tipos de tarifa</h2><button type="button" class="btn pri" data-n>+ Nueva tarifa</button></div>
+      <p class="muted small" style="margin:0">Cada cliente puede tener una tarifa. Su descuento se aplica solo al facturar (si el cliente no tiene descuento fijo propio) y su precio por hora se propone al apuntar horas.</p>
+      <div class="tablewrap"><table><thead><tr><th>Tarifa</th><th class="right">Descuento</th><th class="right">Precio hora</th><th>Estado</th><th></th></tr></thead><tbody>
+      ${Tt.map((t) => `<tr><td><b>${esc(t.nombre)}</b>${t.notas ? `<div class="small muted">${esc(t.notas)}</div>` : ''}</td><td class="right num">${Number(t.descuento_pct)} %</td><td class="right num">${t.precio_hora != null ? money(t.precio_hora) : 'Del mecánico'}</td><td>${t.activa ? '<span class="chip ok">Activa</span>' : '<span class="chip">Inactiva</span>'}</td><td class="right"><button type="button" class="btn sm" data-e="${t.id}">Editar</button></td></tr>`).join('')}
+      </tbody></table></div></section>`;
+    const editar = (t = {}) => modal(t.id ? 'Editar tarifa' : 'Nueva tarifa', `<div class="form">${field('Nombre', 'nombre', t.nombre, 'text', 'maxlength="60"')}${field('Descuento (%)', 'descuento_pct', t.descuento_pct ?? 0, 'number', 'min="0" max="100" step="0.5"')}${field('Precio por hora (€, opcional)', 'precio_hora', t.precio_hora, 'number', 'min="0" step="0.5"')}${area('Notas', 'notas', t.notas, 'maxlength="300"')}<label class="check full"><input type="checkbox" name="activa" ${t.activa ?? true ? 'checked' : ''}> Activa</label></div>`, {
+      onOk: async (root) => {
+        const o = formData(root); const d = Number(o.descuento_pct) || 0;
+        if (!o.nombre) throw new Error('Falta el nombre'); if (d < 0 || d > 100) throw new Error('Descuento no válido');
+        const row = { nombre: o.nombre, descuento_pct: d, precio_hora: o.precio_hora === null ? null : Number(o.precio_hora), notas: o.notas, activa: o.activa };
+        if (t.id) ok(await sb.from('tarifas').update(row).eq('id', t.id)); else ok(await sb.from('tarifas').insert(row));
+        toast('Tarifa guardada'); recargar();
+      },
+    });
+    T.querySelector('[data-n]').addEventListener('click', () => editar());
+    T.querySelectorAll('[data-e]').forEach((b) => b.addEventListener('click', () => editar(Tt.find((x) => x.id == b.dataset.e))));
+  }
+
+  if (tab === 'campos') {
+    const K = ok(await sb.from('campos_personalizados').select('*').order('entidad').order('orden'));
+    const tipoT = { texto: 'Texto', numero: 'Número', fecha: 'Fecha', si_no: 'Sí / No' };
+    T.innerHTML = `<section class="card" style="max-width:760px"><div class="head"><h2>Campos personalizados</h2><button type="button" class="btn pri" data-n>+ Nuevo campo</button></div>
+      <p class="muted small" style="margin:0">Añade los datos que necesites en las fichas de clientes y de vehículos, sin tocar el programa.</p>
+      ${['cliente', 'vehiculo'].map((en) => `<h3>${en === 'cliente' ? 'Ficha de cliente / proveedor' : 'Ficha de vehículo'}</h3><div class="list">${K.filter((k) => k.entidad === en).map((k) => `<div><span class="grow"><b>${esc(k.nombre)}</b><span class="small muted">${tipoT[k.tipo]}</span></span><button type="button" class="btn sm danger" data-d="${k.id}">Quitar</button></div>`).join('') || '<div class="empty">Sin campos</div>'}</div>`).join('')}
+    </section>`;
+    T.querySelector('[data-n]').addEventListener('click', () => modal('Nuevo campo', `<div class="form"><div class="field"><label for="ce">Ficha</label><select id="ce" name="entidad">${opt('cliente', 'Cliente / proveedor', 'cliente')}${opt('vehiculo', 'Vehículo', '')}</select></div>${field('Nombre del campo', 'nombre', '', 'text', 'maxlength="60"')}<div class="field"><label for="ct">Tipo</label><select id="ct" name="tipo">${Object.entries(tipoT).map(([k, t]) => opt(k, t, 'texto')).join('')}</select></div></div>`, {
+      onOk: async (root) => { const o = formData(root); if (!o.nombre) throw new Error('Falta el nombre'); ok(await sb.from('campos_personalizados').insert({ entidad: o.entidad, nombre: o.nombre, tipo: o.tipo, orden: K.length + 1 })); toast('Campo creado'); recargar(); },
+    }));
+    T.querySelectorAll('[data-d]').forEach((b) => b.addEventListener('click', async () => {
+      try { ok(await sb.from('campos_personalizados').delete().eq('id', b.dataset.d)); toast('Campo quitado (los datos ya guardados se conservan)'); recargar(); } catch (e) { fail(e); }
     }));
   }
 

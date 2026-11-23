@@ -14,7 +14,7 @@ export async function render(el, params) {
   if (params.cita) {
     cita = ok(await sb.from('citas').select('*,clientes(id,nombre,telefono),motos(*)').eq('id', params.cita).maybeSingle());
     if (cita) ini = { cliente: cita.clientes, moto: cita.motos };
-  }
+  } else if (/^\d+$/.test(params.cliente || '')) ini = { cliente: { id: Number(params.cliente) } };
   const st = { cliente: null, moto: null };
   el.innerHTML = `
   <div class="head"><div class="t"><h1>Recibir moto</h1><div class="muted">Hoja de autorización de reparación</div></div><div class="actions"><a class="btn" href="#/">Cancelar</a></div></div>

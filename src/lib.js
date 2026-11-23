@@ -9,7 +9,7 @@ export const sb = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: { persistSession: true, autoRefreshToken: true, storageKey: 'sms-taller-auth' },
 });
 
-export const state = { user: null, perfil: null, config: null, perfiles: [], impuestos: [] };
+export const state = { user: null, perfil: null, config: null, perfiles: [], impuestos: [], tarifas: [], campos: [] };
 
 // ---------- Escapado (evita XSS: todo dato de la BD pasa por aquí) ----------
 export function esc(v) {
@@ -133,12 +133,15 @@ function mix(a, b, t) {
 }
 
 export async function cargarComunes() {
-  const [c, p, i] = await Promise.all([
+  const [c, p, i, t, cp] = await Promise.all([
     sb.from('config').select('*').eq('id', 1).single(),
     sb.from('perfiles').select('*').order('nombre'),
     sb.from('impuestos').select('*').order('id'),
+    sb.from('tarifas').select('*').order('id'),
+    sb.from('campos_personalizados').select('*').order('orden'),
   ]);
   if (c.error) throw c.error;
   state.config = c.data; state.perfiles = p.data || []; state.impuestos = i.data || [];
+  state.tarifas = t.data || []; state.campos = cp.data || [];
   aplicarTema(state.config);
 }

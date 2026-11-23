@@ -1,5 +1,6 @@
 import { sb, esc, attr, ok, money, fdate, fdt, today, modal, toast, fail, formData, req, field, area, opt, esOficina, esAdmin, confirmar } from '../lib.js';
 import { I } from '../icons.js';
+import { nuevoCliente } from './comun.js';
 
 export async function render(el, params) {
   const tab = params.t || 'stock';
@@ -73,11 +74,13 @@ export async function render(el, params) {
   }
 
   if (tab === 'proveedores') {
+    const V = ok(await sb.from('clientes').select('id,nombre,nombre_comercial,telefono,email,nif,forma_pago,plazo_pago_dias,dias_pago,es_cliente,contactos(nombre,cargo,principal)').eq('es_proveedor', true).order('nombre'));
     T.innerHTML = `<section class="card"><div class="head"><h2>Proveedores</h2>${of ? `<button type="button" class="btn pri" data-nv>${I.plus} Nuevo proveedor</button>` : ''}</div>
-      <div class="tablewrap"><table><thead><tr><th>Proveedor</th><th>Contacto</th><th>Teléfono</th><th class="hide-movil">Email</th><th class="hide-movil">CIF</th></tr></thead>
-      <tbody>${provs.map((v) => `<tr class="${of ? 'click' : ''}" data-id="${v.id}"><td><b>${esc(v.nombre)}</b><div class="small muted">${esc(v.notas || '')}</div></td><td>${esc(v.contacto || '')}</td><td><a href="tel:${attr(v.telefono || '')}">${esc(v.telefono || '')}</a></td><td class="hide-movil">${esc(v.email || '')}</td><td class="hide-movil">${esc(v.cif || '')}</td></tr>`).join('') || '<tr><td colspan="5" class="empty">Sin proveedores</td></tr>'}</tbody></table></div></section>`;
-    T.querySelector('[data-nv]')?.addEventListener('click', () => editarProveedor(null, recargar));
-    if (of) T.querySelectorAll('tr[data-id]').forEach((tr) => tr.addEventListener('click', () => editarProveedor(provs.find((v) => v.id == tr.dataset.id), recargar)));
+      <p class="muted small" style="margin:0">Los proveedores comparten ficha con los clientes: una misma empresa puede ser las dos cosas.</p>
+      <div class="tablewrap"><table><thead><tr><th>Proveedor</th><th>Contacto</th><th>Teléfono</th><th class="hide-movil">Pago</th><th class="hide-movil">CIF</th></tr></thead>
+      <tbody>${V.map((v) => { const k = v.contactos.find((x) => x.principal) || v.contactos[0]; return `<tr class="click" data-id="${v.id}"><td><b>${esc(v.nombre)}</b>${v.es_cliente ? ' <span class="chip info">También cliente</span>' : ''}</td><td>${k ? esc(k.nombre) + (k.cargo ? `<div class="small muted">${esc(k.cargo)}</div>` : '') : ''}</td><td><a href="tel:${attr(v.telefono || '')}">${esc(v.telefono || '')}</a></td><td class="hide-movil small">${esc([v.forma_pago, v.plazo_pago_dias != null ? v.plazo_pago_dias + ' días' : '', v.dias_pago].filter(Boolean).join(' · '))}</td><td class="hide-movil">${esc(v.nif || '')}</td></tr>`; }).join('') || '<tr><td colspan="5" class="empty">Sin proveedores</td></tr>'}</tbody></table></div></section>`;
+    T.querySelector('[data-nv]')?.addEventListener('click', () => nuevoCliente('', (c) => { location.hash = `#/cliente/${c.id}`; }, { proveedor: true }));
+    T.querySelectorAll('tr[data-id]').forEach((tr) => tr.addEventListener('click', (e) => { if (!e.target.closest('a')) location.hash = `#/cliente/${tr.dataset.id}?t=datos`; }));
   }
 
   if (tab === 'movimientos') {
@@ -124,24 +127,5 @@ function editarPieza(p, provs, recargar) {
   m.querySelector('[data-del]')?.addEventListener('click', async () => {
     if (!(await confirmar('¿Eliminar esta pieza del almacén?', 'Eliminar'))) return;
     try { ok(await sb.from('piezas').delete().eq('id', p.id)); m.remove(); toast('Pieza eliminada'); recargar(); } catch (e) { fail(/foreign/.test(e.message) ? new Error('Se ha usado en reparaciones: no se puede eliminar') : e); }
-  });
-}
-
-function editarProveedor(v, recargar) {
-  v = v || {};
-  modal(v.id ? 'Editar proveedor' : 'Nuevo proveedor', `<div class="form">
-    ${field('Nombre *', 'nombre', v.nombre, 'text', 'maxlength="120" required')}
-    ${field('CIF', 'cif', v.cif, 'text', 'maxlength="20"')}
-    ${field('Persona de contacto', 'contacto', v.contacto, 'text', 'maxlength="80"')}
-    ${field('Teléfono', 'telefono', v.telefono, 'tel', 'maxlength="20"')}
-    ${field('Email', 'email', v.email, 'email', 'maxlength="120"')}
-    ${area('Notas', 'notas', v.notas, 'maxlength="500"')}
-  </div>`, {
-    onOk: async (root) => {
-      const o = formData(root); req(o, [['nombre', 'nombre']]);
-      if (o.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(o.email)) throw new Error('Email no válido');
-      if (v.id) ok(await sb.from('proveedores').update(o).eq('id', v.id)); else ok(await sb.from('proveedores').insert(o));
-      toast('Proveedor guardado'); recargar();
-    },
   });
 }

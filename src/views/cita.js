@@ -28,7 +28,7 @@ export async function render(el, params) {
     </section>
   </div>`;
 
-  selectorClienteMoto(el.querySelector('[data-cli]'), (s) => { st.cliente = s.cliente; st.moto = s.moto; resumen(); });
+  selectorClienteMoto(el.querySelector('[data-cli]'), (s) => { st.cliente = s.cliente; st.moto = s.moto; resumen(); }, /^\d+$/.test(params.cliente || '') ? { cliente: { id: Number(params.cliente) } } : {});
   const $ = (s) => el.querySelector(s);
   $('#n-serv').addEventListener('change', (e) => { st.servicio = e.target.value; st.dur = SERVICIOS.find((x) => x[0] === st.servicio)[1]; $('#n-dur').value = st.dur; slots(); });
   $('#n-tec').addEventListener('change', (e) => { st.tecnico = e.target.value; slots(); });
