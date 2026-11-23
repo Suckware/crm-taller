@@ -236,7 +236,11 @@ tfoot td { font-weight: 700; border-bottom: 0; }
   .bottomnav a { font-size: 10px; }
 }
 
+/* Descuento por línea en la factura */
+.inp.dto { width: 72px; min-height: 34px; padding: 4px 8px; text-align: right; }
+.solo-print { display: none; }
 @media print {
+  .solo-print { display: inline; }
   .side, .topbar, .bottomnav, .no-print, #toasts { display: none !important; }
   body, .main { background: #fff; padding: 0; }
   .invoice, .card { border: 0; box-shadow: none; padding: 0; }

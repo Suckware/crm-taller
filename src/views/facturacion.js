@@ -64,6 +64,7 @@ export async function renderFactura(el, params) {
     ? (await sb.from('facturas').select('id,numero,fecha').eq('id', f.rectifica_id).maybeSingle()).data
     : f.estado === 'anulada' ? (await sb.from('facturas').select('id,numero,fecha').eq('rectifica_id', f.id).maybeSingle()).data : null;
   const editable = f.estado === 'pendiente';
+  const conDto = editable || L.some((l) => Number(l.dto_pct));
   const titulo = rect ? 'Factura rectificativa' : 'Factura';
   const recargar = () => renderFactura(el, params);
   el.innerHTML = `
@@ -86,8 +87,10 @@ export async function renderFactura(el, params) {
       <div><div class="lbl">Cliente</div><b>${esc(cli.nombre)}</b><div class="small">${esc(cli.nif || '')}<br>${esc(cli.direccion || '')}<br>${esc(cli.telefono || '')}</div></div>
       ${moto ? `<div class="right"><div class="lbl">Vehículo</div><b>${esc(moto.marca)} ${esc(moto.modelo)}</b><div class="small">${esc(moto.matricula || '')}${moto.bastidor ? '<br>' + esc(moto.bastidor) : ''}${f.reparaciones.km_entrada ? '<br>' + f.reparaciones.km_entrada.toLocaleString('es-ES') + ' km' : ''}</div></div>` : ''}
     </div>
-    <div class="tablewrap"><table><thead><tr><th>Concepto</th><th class="right">Cant.</th><th class="right">Precio</th><th class="right">Importe</th>${editable ? '<th class="no-print"></th>' : ''}</tr></thead>
-      <tbody>${L.map((l) => `<tr><td>${esc(l.concepto)}</td><td class="right num">${Number(l.cantidad).toLocaleString('es-ES')}</td><td class="right num">${money(l.precio)}</td><td class="right num">${money(l.importe)}</td>${editable ? `<td class="right no-print"><button type="button" class="btn sm danger" data-del="${l.id}" aria-label="Quitar línea">✕</button></td>` : ''}</tr>`).join('')}</tbody></table></div>
+    <div class="tablewrap"><table><thead><tr><th>Concepto</th><th class="right">Cant.</th><th class="right">Precio</th>${conDto ? '<th class="right">Dto.</th>' : ''}<th class="right">Importe</th>${editable ? '<th class="no-print"></th>' : ''}</tr></thead>
+      <tbody>${L.map((l) => `<tr><td>${esc(l.concepto)}</td><td class="right num">${Number(l.cantidad).toLocaleString('es-ES')}</td><td class="right num">${money(l.precio)}</td>${conDto ? `<td class="right num">${editable
+        ? `<span class="no-print"><input class="inp dto" type="number" min="0" max="100" step="0.5" inputmode="decimal" value="${attr(Number(l.dto_pct) || 0)}" data-dto="${l.id}" aria-label="Descuento de la línea en %"> %</span><span class="solo-print">${Number(l.dto_pct) ? `${Number(l.dto_pct).toLocaleString('es-ES')} %` : ''}</span>`
+        : (Number(l.dto_pct) ? `${Number(l.dto_pct).toLocaleString('es-ES')} %` : '')}</td>` : ''}<td class="right num">${money(l.importe)}</td>${editable ? `<td class="right no-print"><button type="button" class="btn sm danger" data-del="${l.id}" aria-label="Quitar línea">✕</button></td>` : ''}</tr>`).join('')}</tbody></table></div>
     <div class="totals">
       <div><span>Base imponible</span><b class="num">${money(f.base)}</b></div>
       <div><span>${esc(f.impuesto_nombre)} ${Number(f.impuesto_pct).toLocaleString('es-ES')} %</span><b class="num">${money(f.cuota)}</b></div>
@@ -104,14 +107,21 @@ export async function renderFactura(el, params) {
     const i = state.impuestos.find((x) => x.id == e.target.value);
     try { ok(await sb.from('facturas').update({ impuesto_nombre: i.nombre, impuesto_pct: i.porcentaje }).eq('id', id)); ok(await sb.rpc('recalcular_factura', { p_factura: id })); toast('Impuesto cambiado'); recargar(); } catch (err) { fail(err); }
   });
-  el.querySelector('[data-linea]')?.addEventListener('click', () => modal('Añadir línea', `<div class="form">${field('Concepto', 'concepto', '', 'text', 'maxlength="200"')}${field('Cantidad', 'cantidad', 1, 'number', 'min="0.01" step="0.01"')}${field('Precio (€)', 'precio', '', 'number', 'step="0.01"')}</div>`, {
+  el.querySelector('[data-linea]')?.addEventListener('click', () => modal('Añadir línea', `<div class="form">${field('Concepto', 'concepto', '', 'text', 'maxlength="200"')}${field('Cantidad', 'cantidad', 1, 'number', 'min="0.01" step="0.01"')}${field('Precio (€)', 'precio', '', 'number', 'step="0.01"')}${field('Descuento (%)', 'dto_pct', 0, 'number', 'min="0" max="100" step="0.5"')}</div>`, {
     okText: 'Añadir',
     onOk: async (root) => {
-      const o = formData(root); const c = Number(o.cantidad), p = Number(o.precio);
+      const o = formData(root); const c = Number(o.cantidad), p = Number(o.precio), d = Number(o.dto_pct) || 0;
       if (!o.concepto || !(c > 0) || Number.isNaN(p)) throw new Error('Rellena concepto, cantidad y precio');
-      ok(await sb.from('factura_lineas').insert({ factura_id: id, tipo: 'otro', concepto: o.concepto, cantidad: c, precio: p, importe: Math.round(c * p * 100) / 100, orden: 3 }));
+      if (d < 0 || d > 100) throw new Error('El descuento debe estar entre 0 y 100 %');
+      ok(await sb.from('factura_lineas').insert({ factura_id: id, tipo: 'otro', concepto: o.concepto, cantidad: c, precio: p, dto_pct: d, importe: Math.round(c * p * (1 - d / 100) * 100) / 100, orden: 3 }));
       ok(await sb.rpc('recalcular_factura', { p_factura: id })); toast('Línea añadida'); recargar();
     },
+  }));
+  el.querySelectorAll('[data-dto]').forEach((inp) => inp.addEventListener('change', async () => {
+    const d = Number(inp.value);
+    if (Number.isNaN(d) || d < 0 || d > 100) { toast('El descuento debe estar entre 0 y 100 %'); inp.value = Number(L.find((l) => l.id == inp.dataset.dto)?.dto_pct) || 0; return; }
+    inp.disabled = true;
+    try { ok(await sb.from('factura_lineas').update({ dto_pct: d }).eq('id', inp.dataset.dto)); ok(await sb.rpc('recalcular_factura', { p_factura: id })); toast('Descuento aplicado'); recargar(); } catch (e) { fail(e); inp.disabled = false; }
   }));
   el.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', async () => {
     if (!(await confirmar('¿Quitar esta línea de la factura?', 'Quitar'))) return;
