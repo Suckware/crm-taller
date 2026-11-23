@@ -9,7 +9,7 @@ export const sb = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: { persistSession: true, autoRefreshToken: true, storageKey: 'sms-taller-auth' },
 });
 
-export const state = { user: null, perfil: null, config: null, perfiles: [], impuestos: [], tarifas: [], campos: [] };
+export const state = { user: null, perfil: null, config: null, perfiles: [], impuestos: [], tarifas: [], campos: [], licencia: null };
 
 // ---------- Escapado (evita XSS: todo dato de la BD pasa por aquí) ----------
 export function esc(v) {
@@ -133,15 +133,69 @@ function mix(a, b, t) {
 }
 
 export async function cargarComunes() {
-  const [c, p, i, t, cp] = await Promise.all([
+  const [c, p, i, t, cp, l] = await Promise.all([
     sb.from('config').select('*').eq('id', 1).single(),
     sb.from('perfiles').select('*').order('nombre'),
     sb.from('impuestos').select('*').order('id'),
     sb.from('tarifas').select('*').order('id'),
     sb.from('campos_personalizados').select('*').order('orden'),
+    sb.from('licencia').select('*').eq('id', 1).maybeSingle(),
   ]);
   if (c.error) throw c.error;
   state.config = c.data; state.perfiles = p.data || []; state.impuestos = i.data || [];
-  state.tarifas = t.data || []; state.campos = cp.data || [];
+  state.tarifas = t.data || []; state.campos = cp.data || []; state.licencia = l.data || null;
   aplicarTema(state.config);
+}
+
+// ---------- Licencia (la manda la consola de proveedor) ----------
+// Esto solo decide qué se enseña en pantalla. Lo que se puede guardar lo decide
+// la base de datos (disparadores de licencia), así que tocar el navegador no sirve de nada.
+// libre: sin licencia activada (sin límites) · activa · gracia · consulta (solo ver)
+export function licEstado(l = state.licencia) {
+  if (!l || !l.controlada) return 'libre';
+  const hoy = today();
+  const mas = (d, n) => isoDay(new Date(new Date(d + 'T12:00:00').getTime() + n * 86400000));
+  if (l.bloqueada || !l.termina || hoy > mas(l.termina, l.dias_gracia)) return 'consulta';
+  if (!l.ultima_ok || Date.now() - new Date(l.ultima_ok).getTime() > l.dias_gracia * 86400000) return 'consulta';
+  return hoy > l.termina ? 'gracia' : 'activa';
+}
+// ¿Está el módulo en el plan? (con licencia libre, todo)
+export function tieneModulo(...claves) {
+  const l = state.licencia;
+  if (licEstado() === 'libre') return true;
+  return claves.some((k) => (l.modulos || []).includes(k));
+}
+export const MODULOS_CRM = {
+  AGENDA: 'Agenda y citas', CLIENTES: 'Clientes y proveedores', VEHICULOS: 'Vehículos', AUTORIZACION: 'Hoja de autorización',
+  REPARACIONES: 'Reparaciones', ALMACEN: 'Almacén', FACTURACION: 'Facturación (ordenador)', APPS: 'Apps Android, iOS y Windows',
+  SEDES: 'Varias sedes', INFORMES: 'Informes', RECORDATORIOS: 'Recordatorios ITV y revisión', MEDIDA: 'Logo, colores y campos a medida',
+};
+// Plan según los módulos: Premium si trae alguno de Premium, Profesional si trae alguno de Profesional
+export function licPlan(l = state.licencia) {
+  const m = l?.modulos || [];
+  if (['SEDES', 'INFORMES', 'RECORDATORIOS', 'MEDIDA'].some((k) => m.includes(k))) return 'Premium';
+  if (['REPARACIONES', 'ALMACEN', 'FACTURACION', 'APPS'].some((k) => m.includes(k))) return 'Profesional';
+  return 'Básico';
+}
+// Pregunta a la consola (desde nuestro servidor) cómo está la licencia. Sin forzar, como mucho cada 6 horas.
+export async function refrescarLicencia(forzar = false) {
+  const l = state.licencia;
+  if (!l || !l.controlada) return false;
+  if (!forzar && l.ultima_consulta && Date.now() - new Date(l.ultima_consulta).getTime() < 6 * 3600000) return false;
+  const { data, error } = await sb.functions.invoke('licencia', { body: { accion: 'actualizar' } });
+  const r = await sb.from('licencia').select('*').eq('id', 1).maybeSingle();
+  if (!r.error) state.licencia = r.data;
+  if (error || data?.ok === false) throw new Error(data?.error || 'No se ha podido hablar con la consola de licencias.');
+  return true;
+}
+export async function activarLicencia(codigo) {
+  const { data, error } = await sb.functions.invoke('licencia', { body: { accion: 'activar', codigo } });
+  if (error) {
+    let m = '';
+    try { m = (await error.context.json()).error; } catch { /* sin detalle */ }
+    throw new Error(m || 'No se ha podido activar la licencia.');
+  }
+  if (!data?.ok) throw new Error(data?.error || 'No se ha podido activar la licencia.');
+  const r = await sb.from('licencia').select('*').eq('id', 1).maybeSingle();
+  if (!r.error) state.licencia = r.data;
 }

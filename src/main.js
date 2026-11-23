@@ -4,7 +4,7 @@ import '@fontsource/plus-jakarta-sans/600.css';
 import '@fontsource/plus-jakarta-sans/700.css';
 import '@fontsource/plus-jakarta-sans/800.css';
 import './styles.css';
-import { sb, state, esc, attr, toast, cargarComunes, DOMINIO_USUARIOS, puedeFacturar, esAdmin } from './lib.js';
+import { sb, state, esc, attr, toast, cargarComunes, DOMINIO_USUARIOS, puedeFacturar, esAdmin, licEstado, tieneModulo, refrescarLicencia, fdate } from './lib.js';
 import { I } from './icons.js';
 import { activarCodigoPostal } from './cp.js';
 import * as panel from './views/panel.js';
@@ -19,6 +19,10 @@ import * as facturacion from './views/facturacion.js';
 import * as config from './views/config.js';
 
 const app = document.getElementById('app');
+
+// Qué módulo de la licencia hace falta para cada sección del menú
+const MODULO_DE = { agenda: ['AGENDA'], rep: ['AUTORIZACION', 'REPARACIONES'], clientes: ['CLIENTES'], almacen: ['ALMACEN'], fact: ['FACTURACION'] };
+const permitido = (k) => !MODULO_DE[k] || tieneModulo(...MODULO_DE[k]);
 
 const ROUTES = [
   [/^\/?$/, panel.render, 'panel'],
@@ -45,7 +49,7 @@ function navItems() {
   ];
   if (puedeFacturar()) items.push(['#/facturacion', 'fact', 'Facturación', I.fact]);
   items.push(['#/config', 'config', 'Configuración', I.config]);
-  return items;
+  return items.filter(([, k]) => permitido(k));
 }
 
 function shell(active) {
@@ -66,6 +70,7 @@ function shell(active) {
     </nav>
     <div style="flex:1;min-width:0;display:flex;flex-direction:column">
       <header class="topbar"><img src="./logo.png" alt=""><b>${esc(cfg.nombre_taller)}</b><a href="#/config" style="color:#fff" aria-label="Configuración">${I.config.replace('<svg', '<svg width="22" height="22"')}</a><button type="button" data-salir>Salir</button></header>
+      ${avisoLicencia()}
       <main class="main" id="view"></main>
     </div>
     <nav class="bottomnav" aria-label="Accesos rápidos">${bottom}</nav>
@@ -98,6 +103,16 @@ function menuPlegable() {
   document.addEventListener('pointerdown', (e) => { if (!side.contains(e.target)) side.classList.remove('abierto'); });
 }
 
+function avisoLicencia() {
+  const e = licEstado(); const l = state.licencia;
+  if (e === 'consulta') {
+    const motivo = l.bloqueada ? 'La licencia está bloqueada' : (l.termina && new Date() > new Date(l.termina)) ? `La licencia terminó el ${fdate(l.termina)}` : 'No se ha podido comprobar la licencia en los últimos días';
+    return `<div class="lic-aviso bad" role="status"><b>Modo consulta.</b> ${esc(motivo)}. Puedes ver los datos, pero no crear ni cambiar nada.${esAdmin() ? ' <a href="#/config?t=licencia">Ver licencia</a>' : ' Avisa al administrador.'}</div>`;
+  }
+  if (e === 'gracia') return `<div class="lic-aviso" role="status">La licencia terminó el ${esc(fdate(l.termina))}. Renuévala pronto para no pasar a modo consulta.${esAdmin() ? ' <a href="#/config?t=licencia">Ver licencia</a>' : ''}</div>`;
+  return '';
+}
+
 async function salir() {
   await sb.auth.signOut();
   state.user = state.perfil = null;
@@ -120,6 +135,7 @@ async function route() {
   if (!hit) { location.hash = '#/'; return; }
   const [re, fn, active] = hit;
   if (active === 'fact' && !puedeFacturar()) { location.hash = '#/'; return; }
+  if (!permitido(active)) { location.hash = '#/'; return; }
   const m = path.match(re);
   const view = shell(active);
   const my = ++rendering;
@@ -185,6 +201,9 @@ async function arrancar(session) {
   state.perfil = perfil;
   try { await cargarComunes(); } catch (e) { renderLogin('No se ha podido conectar. Inténtalo de nuevo.'); return; }
   route();
+  // Una vez al entrar (como mucho cada 6 h) se pregunta a la consola cómo está la licencia
+  const antes = JSON.stringify(state.licencia);
+  refrescarLicencia().then(() => { if (JSON.stringify(state.licencia) !== antes) route(); }).catch((e) => console.warn(e));
 }
 
 sb.auth.onAuthStateChange((ev) => {

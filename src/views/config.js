@@ -1,4 +1,4 @@
-import { sb, state, esc, attr, ok, modal, toast, fail, formData, field, area, opt, esAdmin, aplicarTema, cargarComunes, hex, money } from '../lib.js';
+import { sb, state, esc, attr, ok, modal, toast, fail, formData, field, area, opt, esAdmin, aplicarTema, cargarComunes, hex, money, fdate, fdt, licEstado, licPlan, MODULOS_CRM, refrescarLicencia, activarLicencia } from '../lib.js';
 import { CONDICIONES_DEF } from './recepcion.js';
 
 const TEMAS = [
@@ -9,7 +9,7 @@ const TEMAS = [
 export async function render(el, params) {
   const adm = esAdmin();
   const tab = params.t || (adm ? 'taller' : 'perfil');
-  const tabs = adm ? [['taller', 'Datos del taller'], ['apariencia', 'Logo y colores'], ['impuestos', 'Impuestos'], ['tarifas', 'Tarifas'], ['campos', 'Campos personalizados'], ['usuarios', 'Usuarios y permisos'], ['perfil', 'Mi perfil']] : [['perfil', 'Mi perfil']];
+  const tabs = adm ? [['taller', 'Datos del taller'], ['apariencia', 'Logo y colores'], ['impuestos', 'Impuestos'], ['tarifas', 'Tarifas'], ['campos', 'Campos personalizados'], ['usuarios', 'Usuarios y permisos'], ['licencia', 'Licencia'], ['perfil', 'Mi perfil']] : [['perfil', 'Mi perfil']];
   el.innerHTML = `<div class="head"><div class="t"><h1>Configuración</h1><div class="muted">${adm ? 'Solo el administrador puede cambiar estos ajustes' : 'Los ajustes del taller los gestiona el administrador'}</div></div></div>
   <nav class="tabs">${tabs.map(([k, t]) => `<a href="#/config?t=${k}" class="${k === tab ? 'on' : ''}">${t}</a>`).join('')}</nav><div data-tab></div>`;
   const T = el.querySelector('[data-tab]');
@@ -140,6 +140,46 @@ export async function render(el, params) {
     }));
   }
 
+  if (tab === 'licencia') {
+    const l = state.licencia || {};
+    const e = licEstado();
+    const chipE = { libre: ['Sin activar', 'info'], activa: ['Activa', 'ok'], gracia: ['Terminada, en días de gracia', 'warn'], consulta: ['Modo consulta', 'bad'] }[e];
+    const activos = state.perfiles.filter((p) => p.activo).length;
+    const fila = (t, v) => `<div><span class="muted small">${esc(t)}</span><div><b>${v}</b></div></div>`;
+    T.innerHTML = `<section class="card" style="max-width:860px">
+      <h2 style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">Licencia <span class="chip ${chipE[1]}">${esc(chipE[0])}</span></h2>
+      ${e === 'libre' ? `<p style="margin:0">Todavía no hay ninguna licencia activada, así que el programa funciona <b>sin límites</b>. Cuando tu proveedor te dé el código de licencia, pégalo abajo.</p>` : `
+      <div class="form" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">
+        ${fila('Plan', esc(licPlan(l)))}
+        ${fila('Cliente', esc(l.cliente || '—'))}
+        ${fila('Tipo', l.tipo === 'prueba' ? 'Prueba gratis' : 'Pagada')}
+        ${fila('Válida hasta', esc(fdate(l.termina)))}
+        ${fila('Usuarios activos', `${activos} de ${l.max_usuarios == null ? 'sin límite' : esc(l.max_usuarios)}`)}
+        ${fila('Última comprobación', esc(fdt(l.ultima_ok) || 'Nunca'))}
+      </div>
+      ${l.ultimo_error ? `<div class="aviso"><b>Última comprobación fallida</b>${esc(l.ultimo_error)}</div>` : ''}
+      <h3>Qué incluye</h3>
+      <ul class="lic-mods">${Object.entries(MODULOS_CRM).map(([k, t]) => { const si = (l.modulos || []).includes(k); return `<li class="${si ? '' : 'no'}"><span class="chip ${si ? 'ok' : ''}">${si ? 'Sí' : 'No'}</span>${esc(t)}</li>`; }).join('')}</ul>
+      <p class="muted small" style="margin:0">El programa pregunta cada día a tu proveedor cómo está la licencia. Si termina o se bloquea, pasa a modo consulta: se pueden ver los datos, pero no crear ni cambiar nada.</p>
+      <button type="button" class="btn" data-comprobar style="align-self:flex-start">Comprobar ahora</button>`}
+      <h3>${e === 'libre' ? 'Activar la licencia' : 'Cambiar de licencia'}</h3>
+      <div class="form"><div class="field"><label for="lic-cod">Código de licencia</label><input id="lic-cod" placeholder="XXXX-XXXX-XXXX-XXXX" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="30"></div></div>
+      <p class="muted small" style="margin:0">El código sirve una sola vez. Al activarlo se aplican el plan, los módulos y el número de usuarios de la licencia.</p>
+      <button type="button" class="btn pri" data-activar style="align-self:flex-start">Activar</button></section>`;
+    T.querySelector('[data-comprobar]')?.addEventListener('click', async (ev) => {
+      ev.currentTarget.disabled = true;
+      try { await refrescarLicencia(true); toast('Licencia comprobada'); } catch (err) { toast(err.message, true); }
+      route2();
+    });
+    T.querySelector('[data-activar]').addEventListener('click', async (ev) => {
+      const cod = T.querySelector('#lic-cod').value.trim();
+      if (cod.replace(/[^A-Za-z0-9]/g, '').length < 12) return toast('Escribe el código completo', true);
+      const b = ev.currentTarget; b.disabled = true; b.textContent = 'Activando…';
+      try { await activarLicencia(cod); toast('Licencia activada'); route2(); } catch (err) { toast(err.message, true); b.disabled = false; b.textContent = 'Activar'; }
+    });
+    return;
+  }
+
   if (tab === 'usuarios') {
     const P = ok(await sb.from('perfiles').select('*').order('nombre'));
     const rolT = { admin: 'Administrador', recepcion: 'Recepción', comercial: 'Comercial', mecanico: 'Mecánico' };
@@ -164,3 +204,6 @@ export async function render(el, params) {
     }));
   }
 }
+
+// Vuelve a pintar la pantalla entera (menú y avisos cambian con la licencia)
+function route2() { window.dispatchEvent(new HashChangeEvent('hashchange')); }
