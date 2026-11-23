@@ -89,6 +89,7 @@ function parseHash() {
 let rendering = 0;
 async function route() {
   if (!state.perfil) return;
+  document.querySelectorAll('.modal-bg').forEach((m) => m.remove()); // al cambiar de pantalla se cierran las ventanas abiertas
   const { path, params } = parseHash();
   const hit = ROUTES.find(([re]) => re.test(path));
   if (!hit) { location.hash = '#/'; return; }
