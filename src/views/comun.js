@@ -66,14 +66,16 @@ export function selectorClienteMoto(root, onChange, inicial = {}) {
     inp.parentElement.style.display = 'none';
     sel.innerHTML = `
       <div class="card flat" style="padding:14px;gap:10px">
-        <div style="display:flex;justify-content:space-between;gap:10px;align-items:center"><div><b>${esc(st.cliente.nombre)}</b><div class="muted small">${esc(st.cliente.telefono || '')}</div></div><button type="button" class="btn sm" data-cambiar>Cambiar</button></div>
+        <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap"><div style="flex:1 1 180px;min-width:0"><b>${esc(st.cliente.nombre)}</b><div class="muted small">${esc(st.cliente.telefono || '')}</div></div><div class="actions"><button type="button" class="btn sm" data-editar>Editar datos</button><button type="button" class="btn sm" data-cambiar>Cambiar cliente</button></div></div>
         ${avisoNotas(st.cliente)}
         <div class="field"><label for="selmoto">Vehículo</label><select id="selmoto" class="inp">${st.motos.map((m) => `<option value="${m.id}" ${st.moto?.id === m.id ? 'selected' : ''}>${esc(`${m.marca} ${m.modelo} · ${m.matricula || 'sin matrícula'}`)}</option>`).join('')}<option value="">Sin vehículo</option></select></div>
         <div data-alertas-moto></div>
-        <button type="button" class="linkbtn" data-nm style="text-align:left">+ Añadir otro vehículo a este cliente</button>
+        <div class="actions">${st.moto ? '<button type="button" class="linkbtn" data-em style="text-align:left">Editar datos del vehículo</button>' : ''}<button type="button" class="linkbtn" data-nm style="text-align:left">+ Añadir otro vehículo a este cliente</button></div>
       </div>`;
     sel.querySelector('[data-cambiar]').addEventListener('click', () => { st.cliente = null; st.moto = null; pintar(); onChange(st); inp.focus(); });
     sel.querySelector('#selmoto').addEventListener('change', (e) => { st.moto = st.motos.find((m) => m.id == e.target.value) || null; alertasMoto(); onChange(st); });
+    sel.querySelector('[data-editar]').addEventListener('click', () => editarClienteRapido(st.cliente.id, (c) => elegir(c, st.moto?.id)));
+    sel.querySelector('[data-em]')?.addEventListener('click', () => editarVehiculo(st.moto, (m) => elegir(st.cliente, m?.id ?? st.moto?.id)));
     sel.querySelector('[data-nm]').addEventListener('click', () => editarVehiculo({ cliente_id: st.cliente.id }, (m) => elegir(st.cliente, m.id)));
     alertasMoto();
   }
@@ -149,6 +151,20 @@ export function validarCliente(o, previo = {}) {
   o.descuento_pct = Math.min(100, Math.max(0, Number(o.descuento_pct) || 0));
   if ('codigo_postal' in o || Object.keys(o).some((k) => k.startsWith('x__'))) o.campos_extra = extraerExtras(o, 'cliente', previo.campos_extra || {});
   return o;
+}
+
+// Editar la ficha del cliente sin salir de la cita o la recepción
+export async function editarClienteRapido(id, cb) {
+  const c = ok(await sb.from('clientes').select('*').eq('id', id).single());
+  modal(`Editar ${c.nombre}`, formCliente(c, { completo: false }) + '<p class="muted small" style="margin:8px 0 0">Contactos, datos de pago y el resto de la ficha se cambian en Clientes.</p>', {
+    okText: 'Guardar cambios', wide: true,
+    onOk: async (root) => {
+      const o = validarCliente(formData(root), c);
+      const n = ok(await sb.from('clientes').update(o).eq('id', id).select().single());
+      toast('Ficha del cliente actualizada');
+      cb(n);
+    },
+  });
 }
 
 export function nuevoCliente(texto, cb, { proveedor = false } = {}) {
