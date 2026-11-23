@@ -47,6 +47,8 @@ export async function render(el, params) {
       ${field('Precio hora por defecto (€)', 'precio_hora', cfg.precio_hora, 'number', 'min="0" step="0.5"')}
       ${field('Serie de facturas', 'serie_factura', cfg.serie_factura, 'text', 'maxlength="12" pattern="[A-Za-z0-9-]+"')}
       ${field('Próximo número de factura', 'siguiente_factura', cfg.siguiente_factura, 'number', 'min="1"')}
+      ${field('Serie de facturas rectificativas', 'serie_rectificativa', cfg.serie_rectificativa, 'text', 'maxlength="12" pattern="[A-Za-z0-9-]+"')}
+      ${field('Próximo número de rectificativa', 'siguiente_rectificativa', cfg.siguiente_rectificativa, 'number', 'min="1"')}
       ${area('Condiciones de la hoja de autorización', 'condiciones_autorizacion', cfg.condiciones_autorizacion || CONDICIONES_DEF, 'maxlength="4000" style="min-height:180px"')}
       ${area('Pie de factura', 'pie_factura', cfg.pie_factura, 'maxlength="600"')}
     </div><button type="button" class="btn pri" data-g style="align-self:flex-start">Guardar</button></section>`;
@@ -55,7 +57,11 @@ export async function render(el, params) {
         const o = formData(T.querySelector('[data-f]'));
         if (!o.nombre_taller) throw new Error('Falta el nombre');
         if (o.serie_factura && !/^[A-Za-z0-9-]{1,12}$/.test(o.serie_factura)) throw new Error('La serie solo admite letras, números y guiones');
+        if (o.serie_rectificativa && !/^[A-Za-z0-9-]{1,12}$/.test(o.serie_rectificativa)) throw new Error('La serie de rectificativas solo admite letras, números y guiones');
+        if (o.serie_rectificativa && o.serie_rectificativa === o.serie_factura) throw new Error('La serie de rectificativas debe ser distinta de la de facturas');
         o.precio_hora = Number(o.precio_hora) || 0; o.siguiente_factura = Math.max(1, Math.floor(Number(o.siguiente_factura) || 1));
+        o.siguiente_rectificativa = Math.max(1, Math.floor(Number(o.siguiente_rectificativa) || 1));
+        if (!o.serie_rectificativa) delete o.serie_rectificativa;
         ok(await sb.from('config').update(o).eq('id', 1)); toast('Datos guardados'); recargar();
       } catch (e) { fail(e); }
     });

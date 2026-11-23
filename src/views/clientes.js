@@ -150,7 +150,7 @@ export async function renderFicha(el, params) {
   }
   if (tab === 'facturas' && puedeFacturar()) {
     const F = ok(await sb.from('facturas').select('id,numero,fecha,total,estado').eq('cliente_id', id).order('fecha', { ascending: false }));
-    T.innerHTML = `<section class="card"><div class="list">${F.map((f) => `<a href="#/factura/${f.id}"><b style="width:120px">${esc(f.numero)}</b><span class="grow">${fdate(f.fecha)}</span><b class="num">${money(f.total)}</b><span class="chip ${f.estado === 'cobrada' ? 'ok' : f.estado === 'anulada' ? 'bad' : 'warn'}">${esc(f.estado)}</span></a>`).join('') || '<div class="empty">Sin facturas</div>'}</div></section>`;
+    T.innerHTML = `<section class="card"><div class="list">${F.map((f) => `<a href="#/factura/${f.id}"><b style="width:120px">${esc(f.numero)}</b><span class="grow">${fdate(f.fecha)}</span><b class="num">${money(f.total)}</b><span class="chip ${f.estado === 'cobrada' ? 'ok' : f.estado === 'anulada' ? 'bad' : f.estado === 'emitida' ? 'info' : 'warn'}">${esc(f.tipo === 'rectificativa' ? 'rectificativa' : f.estado)}</span></a>`).join('') || '<div class="empty">Sin facturas</div>'}</div></section>`;
   }
 }
 
