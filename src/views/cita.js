@@ -1,5 +1,6 @@
 import { sb, state, esc, attr, ok, today, isoDay, fdatel, ftime, tecnicoOpts, opt, toast, fail, nombreTecnico } from '../lib.js';
 import { selectorClienteMoto } from './comun.js';
+import { botonesAviso } from '../avisos.js';
 
 const SERVICIOS = [
   ['Revisión / mantenimiento', 60], ['Diagnóstico', 60], ['Recepción de moto', 30], ['Cambio de neumáticos', 45],
@@ -70,13 +71,14 @@ export async function render(el, params) {
         cliente_id: st.cliente.id, moto_id: st.moto?.id || null, inicio: new Date(`${st.fecha}T${st.hora}:00`).toISOString(),
         duracion_min: st.dur, servicio: st.servicio, tecnico_id: st.tecnico || null, estado: 'confirmada', notas: st.notas.trim() || null,
       }).select().single());
-      confirmada(el, c, st);
+      const cli = (await sb.from('clientes').select('id,nombre,telefono,email').eq('id', st.cliente.id).single()).data || st.cliente;
+      confirmada(el, c, st, cli);
     } catch (err) { fail(err); b.disabled = false; }
   });
   slots();
 }
 
-function confirmada(el, c, st) {
+function confirmada(el, c, st, cli) {
   el.innerHTML = `
   <section class="card" style="max-width:560px;margin:0 auto;text-align:center;align-items:center;gap:14px">
     <div style="width:72px;height:72px;border-radius:50%;background:var(--ok-bg);color:var(--ok);display:grid;place-items:center;font-size:36px" aria-hidden="true">✓</div>
@@ -84,6 +86,7 @@ function confirmada(el, c, st) {
     <p style="margin:0"><b>${esc(st.cliente.nombre)}</b>${st.moto ? `<br><span class="muted">${esc(st.moto.marca + ' ' + st.moto.modelo + ' · ' + (st.moto.matricula || ''))}</span>` : ''}</p>
     <p style="margin:0"><b>${esc(fdatel(c.inicio))}</b> · ${esc(ftime(c.inicio))}</p>
     <p class="muted" style="margin:0">${esc(c.servicio)} · ${esc(c.tecnico_id ? nombreTecnico(c.tecnico_id) : 'sin técnico')}</p>
+    <div style="width:100%;text-align:left">${botonesAviso('confirmacion', c, cli, st.moto)}</div>
     <div class="actions" style="justify-content:center;width:100%">
       <a class="btn" href="#/agenda?d=${isoDay(c.inicio)}&v=dia">Ver en la agenda</a>
       <a class="btn pri" href="#/cita/nueva">Otra cita</a>

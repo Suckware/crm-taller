@@ -1,5 +1,6 @@
 import { sb, state, esc, attr, ok, ftime, fdatel, cap, isoDay, today, chip, ESTADOS_CITA, nombreTecnico, colorTecnico, modal, opt, toast, fail, tecnicoOpts, esEscritorio, confirmar } from '../lib.js';
 import { I } from '../icons.js';
+import { botonesAviso } from '../avisos.js';
 
 const addDays = (d, n) => { const x = new Date(d + 'T12:00:00'); x.setDate(x.getDate() + n); return isoDay(x); };
 // La semana del taller es de lunes a sábado: el domingo muestra la semana siguiente
@@ -11,7 +12,7 @@ export async function render(el, params) {
   const tec = params.t || '';
   const desde = vista === 'semana' ? lunes(d) : d;
   const hasta = vista === 'semana' ? addDays(desde, 6) : addDays(d, 1);
-  let q = sb.from('citas').select('*,clientes(id,nombre,telefono),motos(id,marca,modelo,matricula)')
+  let q = sb.from('citas').select('*,clientes(id,nombre,telefono,email),motos(id,marca,modelo,matricula)')
     .gte('inicio', new Date(desde + 'T00:00:00').toISOString()).lt('inicio', new Date(hasta + 'T00:00:00').toISOString()).order('inicio');
   if (tec) q = q.eq('tecnico_id', tec);
   const citas = ok(await q);
@@ -87,7 +88,8 @@ export function abrirCita(c, recargar) {
       <a class="btn" href="#/recepcion?cita=${c.id}">Recibir moto (hoja de autorización)</a>
       ${c.clientes ? `<a class="btn" href="#/cliente/${c.clientes.id}">Ficha del cliente</a>` : ''}
       <button type="button" class="btn danger" data-borrar>Eliminar cita</button>
-    </div>`;
+    </div>
+    ${c.clientes && c.estado !== 'cancelada' ? botonesAviso(new Date(c.inicio) > new Date() ? 'recordatorio' : 'confirmacion', c, c.clientes, c.motos) : ''}`;
   const m = modal('Cita', body, {
     onOk: async (root) => {
       const f = Object.fromEntries([...root.querySelectorAll('[name]')].map((e) => [e.name, e.value.trim()]));
