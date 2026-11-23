@@ -53,7 +53,7 @@ function shell(active) {
   const nav = items.map(([h, k, t, ic]) => `<a href="${h}" class="${k === active ? 'on' : ''}" title="${attr(t)}">${ic}<span>${esc(t)}</span></a>`).join('');
   const bottom = items.filter(([, k]) => ['panel', 'agenda', 'rep', 'clientes', 'almacen'].includes(k))
     .map(([h, k, t, ic]) => `<a href="${h}" class="${k === active ? 'on' : ''}">${ic}<span>${esc(t)}</span></a>`).join('');
-  const rolTxt = { admin: 'Administrador', recepcion: 'Recepción', mecanico: 'Mecánico' }[state.perfil.rol];
+  const rolTxt = { admin: 'Administrador', recepcion: 'Recepción', comercial: 'Comercial', mecanico: 'Mecánico' }[state.perfil.rol];
   app.innerHTML = `
   <div class="shell">
     <nav class="side" aria-label="Principal">

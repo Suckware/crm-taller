@@ -40,7 +40,7 @@ export const ESTADOS_REP = {
 export const chip = (map, k) => { const [t, c] = map[k] || [k, '']; return `<span class="chip ${c}">${esc(t)}</span>`; };
 
 export const rol = () => state.perfil?.rol;
-export const esOficina = () => ['admin', 'recepcion'].includes(rol());
+export const esOficina = () => ['admin', 'recepcion', 'comercial'].includes(rol());
 export const esAdmin = () => rol() === 'admin';
 export const esEscritorio = () => window.matchMedia('(min-width: 1101px)').matches;
 export const puedeFacturar = () => esOficina() && esEscritorio();
@@ -111,7 +111,7 @@ export const select = (label, name, options, extra = '') =>
   `<div class="field"><label for="f-${name}">${esc(label)}</label><select id="f-${name}" name="${name}" ${extra}>${options}</select></div>`;
 
 export const tecnicoOpts = (sel, vacio = true) =>
-  (vacio ? opt('', 'Sin asignar', sel ?? '') : '') + state.perfiles.filter((p) => p.activo).map((p) => opt(p.id, p.nombre, sel)).join('');
+  (vacio ? opt('', 'Sin asignar', sel ?? '') : '') + state.perfiles.filter((p) => p.activo && p.rol !== 'comercial').map((p) => opt(p.id, p.nombre, sel)).join('');
 
 // Color: valida hex
 export const hex = (c, def) => (/^#[0-9a-f]{6}$/i.test(c || '') ? c : def);

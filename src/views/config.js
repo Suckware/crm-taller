@@ -19,7 +19,7 @@ export async function render(el, params) {
   if (tab === 'perfil') {
     const p = state.perfil;
     T.innerHTML = `<section class="card" style="max-width:640px"><h2>${esc(p.nombre)}</h2>
-      <p style="margin:0">Usuario: <b>${esc(p.usuario)}</b> · Rol: <b>${esc({ admin: 'Administrador', recepcion: 'Recepción', mecanico: 'Mecánico' }[p.rol])}</b></p>
+      <p style="margin:0">Usuario: <b>${esc(p.usuario)}</b> · Rol: <b>${esc({ admin: 'Administrador', recepcion: 'Recepción', comercial: 'Comercial', mecanico: 'Mecánico' }[p.rol])}</b></p>
       <h3>Cambiar mi contraseña</h3>
       <div class="form"><div class="field"><label for="pw1">Nueva contraseña</label><input id="pw1" type="password" autocomplete="new-password" minlength="10" maxlength="128"></div>
       <div class="field"><label for="pw2">Repetir</label><input id="pw2" type="password" autocomplete="new-password" maxlength="128"></div></div>
@@ -136,9 +136,9 @@ export async function render(el, params) {
 
   if (tab === 'usuarios') {
     const P = ok(await sb.from('perfiles').select('*').order('nombre'));
-    const rolT = { admin: 'Administrador', recepcion: 'Recepción', mecanico: 'Mecánico' };
+    const rolT = { admin: 'Administrador', recepcion: 'Recepción', comercial: 'Comercial', mecanico: 'Mecánico' };
     T.innerHTML = `<section class="card"><h2>Usuarios del taller</h2>
-      <p class="muted small" style="margin:0">Cada persona entra con su usuario y contraseña. Administrador: todo. Recepción: agenda, clientes, almacén y facturación. Mecánico: agenda, reparaciones, horas y consulta de almacén (no ve facturación).</p>
+      <p class="muted small" style="margin:0">Cada persona entra con su usuario y contraseña. Administrador: todo. Recepción y Comercial: agenda, clientes, almacén y facturación (no ven datos bancarios ni configuración). Mecánico: agenda, reparaciones, horas y consulta de almacén (no ve facturación).</p>
       <div class="tablewrap"><table><thead><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th class="right">€/hora</th><th>Color</th><th>Estado</th><th></th></tr></thead>
       <tbody>${P.map((p) => `<tr><td><b>${esc(p.nombre)}</b></td><td>${esc(p.usuario)}</td><td>${esc(rolT[p.rol])}</td><td class="right num">${money(p.precio_hora)}</td><td><span style="display:inline-block;width:18px;height:18px;border-radius:50%;background:${attr(hex(p.color, '#1F3A6E'))}"></span></td><td>${p.activo ? '<span class="chip ok">Activo</span>' : '<span class="chip bad">Sin acceso</span>'}</td><td class="right"><button type="button" class="btn sm" data-e="${p.id}">Editar</button></td></tr>`).join('')}</tbody></table></div></section>`;
     T.querySelectorAll('[data-e]').forEach((b) => b.addEventListener('click', () => {
