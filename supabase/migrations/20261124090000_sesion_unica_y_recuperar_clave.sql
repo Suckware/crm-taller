@@ -43,14 +43,16 @@ create or replace function public.sesion_minutos_caducidad()
 returns int language sql immutable as $$ select 10 $$;
 
 -- Esta petición viene de la sesión que tiene el usuario ocupado.
+-- (Transición: mientras se publica la web nueva, un usuario sin fila aún pasa;
+--  la migración siguiente lo hace estricto.)
 create or replace function public.sesion_vigente()
 returns boolean
 language sql stable security definer set search_path = public
 as $$
-  select exists (
+  select not exists (
     select 1 from public.sesiones s
     where s.user_id = auth.uid()
-      and s.session_id::text = (auth.jwt() ->> 'session_id')
+      and s.session_id::text is distinct from (auth.jwt() ->> 'session_id')
   )
 $$;
 
