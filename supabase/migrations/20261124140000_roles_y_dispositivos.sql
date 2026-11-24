@@ -30,9 +30,12 @@ create table if not exists public.roles (
   sistema    boolean not null default false,  -- de serie: no se puede borrar
   created_at timestamptz not null default now()
 );
-alter table public.roles drop constraint if exists roles_ventanas_validas;
-alter table public.roles add constraint roles_ventanas_validas
-  check (ventanas <@ array['agenda', 'rep', 'clientes', 'almacen', 'fact']::text[]);
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'roles_ventanas_validas' and conrelid = 'public.roles'::regclass) then
+    alter table public.roles add constraint roles_ventanas_validas
+      check (ventanas <@ array['agenda', 'rep', 'clientes', 'almacen', 'fact']::text[]);
+  end if;
+end $$;
 create unique index if not exists roles_nombre_unico on public.roles (lower(nombre));
 -- Número del rol (para el Registro de cambios)
 alter table public.roles add column if not exists id bigint generated always as identity;
@@ -67,8 +70,7 @@ begin
   new.nombre := btrim(new.nombre);
   return new;
 end $$;
-drop trigger if exists roles_reglas on public.roles;
-create trigger roles_reglas before insert or update or delete on public.roles
+create or replace trigger roles_reglas before insert or update or delete on public.roles
   for each row execute function public.tg_roles_reglas();
 
 -- Los 4 roles de siempre, con lo que veían hasta hoy
@@ -80,10 +82,14 @@ insert into public.roles (clave, nombre, nivel, ventanas, tecnico, sistema) valu
 on conflict (clave) do nothing;
 
 -- El rol de cada usuario pasa a ser uno de la tabla (antes, una lista fija)
+-- (es el único DROP: quita la lista fija de 4 roles para poder crear más)
 alter table public.perfiles drop constraint if exists perfiles_rol_check;
-alter table public.perfiles drop constraint if exists perfiles_rol_fkey;
-alter table public.perfiles add constraint perfiles_rol_fkey
-  foreign key (rol) references public.roles (clave) on update cascade on delete restrict;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'perfiles_rol_fkey' and conrelid = 'public.perfiles'::regclass) then
+    alter table public.perfiles add constraint perfiles_rol_fkey
+      foreign key (rol) references public.roles (clave) on update cascade on delete restrict;
+  end if;
+end $$;
 
 -- ---------- Dispositivos de cada usuario ----------
 alter table public.perfiles add column if not exists acceso_ios     boolean not null default true;
@@ -153,7 +159,7 @@ returns boolean language sql stable security definer set search_path = public as
 $$;
 
 -- Entrar: además de "una sola sesión", se mira el dispositivo
-create or replace function public.reclamar_sesion(p_dispositivo text default '', p_pista text default '')
+create or replace function public.reclamar_sesion(p_dispositivo text, p_pista text)
 returns jsonb language plpgsql security definer set search_path = public as $$
 declare
   v_sid uuid := nullif(auth.jwt() ->> 'session_id', '')::uuid;
@@ -189,7 +195,7 @@ begin
   return jsonb_build_object('estado', 'ok');
 end $$;
 
-create or replace function public.latido_sesion(p_dispositivo text default '', p_pista text default '')
+create or replace function public.latido_sesion(p_dispositivo text, p_pista text)
 returns jsonb language plpgsql security definer set search_path = public as $$
 begin
   update public.sesiones s set ultimo = now()
@@ -201,9 +207,16 @@ begin
   return public.reclamar_sesion(p_dispositivo, p_pista);
 end $$;
 
--- Las versiones antiguas (un solo parámetro) se quitan para que no queden dos
-drop function if exists public.reclamar_sesion(text);
-drop function if exists public.latido_sesion(text);
+-- Las versiones antiguas (un solo parámetro) pasan a usar las nuevas, así
+-- ningún camino se salta la comprobación del dispositivo (sin borrar nada)
+create or replace function public.reclamar_sesion(p_dispositivo text default '')
+returns jsonb language sql security definer set search_path = public as $$
+  select public.reclamar_sesion(p_dispositivo, '')
+$$;
+create or replace function public.latido_sesion(p_dispositivo text default '')
+returns jsonb language sql security definer set search_path = public as $$
+  select public.latido_sesion(p_dispositivo, '')
+$$;
 
 revoke all on function public.reclamar_sesion(text, text) from public, anon;
 revoke all on function public.latido_sesion(text, text) from public, anon;
@@ -232,8 +245,7 @@ begin
   end if;
   return coalesce(new, old);
 end $$;
-drop trigger if exists perfiles_protege on public.perfiles;
-create trigger perfiles_protege before update or delete on public.perfiles
+create or replace trigger perfiles_protege before update or delete on public.perfiles
   for each row execute function public.tg_perfiles_protege();
 revoke all on function public.tg_perfiles_protege() from public, anon, authenticated;
 
@@ -241,14 +253,14 @@ revoke all on function public.tg_perfiles_protege() from public, anon, authentic
 alter table public.roles enable row level security;
 revoke all on public.roles from anon;
 grant select, insert, update, delete on public.roles to authenticated;
-drop policy if exists personal_lee on public.roles;
-drop policy if exists admin_crea on public.roles;
-drop policy if exists admin_edita on public.roles;
-drop policy if exists admin_borra on public.roles;
-create policy personal_lee on public.roles for select to authenticated using ((select public.es_personal()));
-create policy admin_crea on public.roles for insert to authenticated with check ((select public.es_admin()));
-create policy admin_edita on public.roles for update to authenticated using ((select public.es_admin())) with check ((select public.es_admin()));
-create policy admin_borra on public.roles for delete to authenticated using ((select public.es_admin()));
+do $$ begin
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'roles' and policyname = 'personal_lee') then
+    create policy personal_lee on public.roles for select to authenticated using ((select public.es_personal()));
+    create policy admin_crea on public.roles for insert to authenticated with check ((select public.es_admin()));
+    create policy admin_edita on public.roles for update to authenticated using ((select public.es_admin())) with check ((select public.es_admin()));
+    create policy admin_borra on public.roles for delete to authenticated using ((select public.es_admin()));
+  end if;
+end $$;
 
 -- ---------- Facturación: hace falta la ventana Facturación en el rol ----------
 do $$
@@ -256,7 +268,7 @@ declare t text;
 begin
   foreach t in array array['facturas', 'factura_lineas', 'factura_reparaciones', 'remesas', 'remesa_recibos'] loop
     if to_regclass('public.' || t) is null then continue; end if;
-    execute format('drop policy if exists ventana_facturacion on public.%I', t);
+    if exists (select 1 from pg_policies where schemaname = 'public' and tablename = t and policyname = 'ventana_facturacion') then continue; end if;
     execute format('create policy ventana_facturacion on public.%I as restrictive for all to authenticated
                       using ((select public.puede_ventana(''fact''))) with check ((select public.puede_ventana(''fact'')))', t);
   end loop;
