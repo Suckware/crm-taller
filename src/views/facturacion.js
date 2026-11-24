@@ -14,7 +14,7 @@ export async function render(el, params) {
 
   if (tab === 'facturas') {
     const est = params.e || '';
-    let q = sb.from('facturas').select('*,clientes(nombre),reparaciones(numero)').order('created_at', { ascending: false }).limit(200);
+    let q = sb.from('facturas').select('*,clientes(nombre),reparaciones!facturas_reparacion_id_fkey(numero)').order('created_at', { ascending: false }).limit(200);
     if (est === 'rectificativa') q = q.eq('tipo', 'rectificativa'); else if (est) q = q.eq('estado', est);
     const F = ok(await q);
     T.innerHTML = `<div class="agenda-bar">${[['', 'Todas'], ['pendiente', 'Pendientes'], ['cobrada', 'Cobradas'], ['anulada', 'Anuladas'], ['rectificativa', 'Rectificativas']].map(([k, t]) => `<a class="btn sm ${est === k ? 'pri' : ''}" href="#/facturacion?t=facturas&e=${k}">${t}</a>`).join('')}</div>
@@ -48,7 +48,7 @@ export async function render(el, params) {
 export async function renderFactura(el, params) {
   const id = Number(params.id);
   const [fq, lq, oq] = await Promise.all([
-    sb.from('facturas').select('*,clientes(*),reparaciones(id,numero,km_entrada,motos(marca,modelo,matricula,bastidor))').eq('id', id).single(),
+    sb.from('facturas').select('*,clientes(*),reparaciones!facturas_reparacion_id_fkey(id,numero,km_entrada,motos(marca,modelo,matricula,bastidor))').eq('id', id).single(),
     sb.from('factura_lineas').select('*').eq('factura_id', id).order('orden').order('id'),
     sb.from('factura_reparaciones').select('reparaciones(id,numero,fecha_fin,motos(marca,modelo,matricula))').eq('factura_id', id),
   ]);
