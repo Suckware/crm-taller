@@ -39,3 +39,10 @@ Menú **Registro de cambios**: quién ha dado de alta, cambiado o borrado qué y
 - No se puede modificar ni borrar: nadie tiene permiso de escritura sobre `registro_cambios` y un disparador rechaza UPDATE, DELETE y TRUNCATE.
 - Solo lo lee el administrador. Con licencia activada, además hace falta el módulo `AUDITORIA` (se apunta igual aunque no lo tenga).
 - De los datos bancarios solo se apunta qué campo cambió, no su valor.
+
+## Almacén: buscar piezas y código de barras
+
+- Cada pieza tiene ficha propia (Datos, Histórico de ventas y Movimientos) con botón **Volver** y su **margen** sobre el precio de compra.
+- En **Registrar compra** (entradas) y en **Añadir pieza** de una orden (salidas) la pieza se busca por nombre, referencia, marca o código de barras. La búsqueda la hace la base de datos (25 resultados), así que va rápida aunque haya miles de piezas.
+- Con lector de código de barras: el lector escribe el código y pulsa Intro; si coincide con un código o una referencia, la pieza queda elegida y se pasa a la cantidad.
+- El código de barras es único si se rellena (`supabase/migrations/20261124150000_piezas_codigo_barras.sql`) y se puede importar desde otro programa (columna EAN / código de barras).

@@ -1,4 +1,4 @@
-import { sb, state, esc, attr, ok, modal, toast, formData, req, field, area, opt, fdate, today, money, chip, ESTADOS_REP, puedeFacturar } from '../lib.js';
+import { sb, state, esc, attr, ok, modal, toast, formData, req, field, area, opt, fdate, today, money, chip, ESTADOS_REP, puedeFacturar, fail } from '../lib.js';
 
 const limpiar = (s) => (s || '').replace(/[%,()*]/g, ' ').trim();
 
@@ -338,4 +338,41 @@ export function tablaVentas(T, V, { porPieza }) {
   </table></div></section>`;
   const q = T.querySelector('[data-qv]');
   q.addEventListener('input', () => { const s = q.value.toLowerCase().trim(); T.querySelectorAll('tr[data-txt]').forEach((tr) => { tr.style.display = !s || tr.dataset.txt.includes(s) ? '' : 'none'; }); });
+}
+
+// ---------- Buscador de piezas (nombre, referencia, marca o código de barras) ----------
+// Busca en la base de datos según se escribe, así va rápido aunque haya miles de piezas.
+// Con lector de código de barras: el lector escribe el código y pulsa Intro; si coincide
+// exactamente con un código de barras o una referencia, se elige la pieza directamente.
+export const SEL_PIEZA_BUSCAR = 'id,referencia,nombre,marca,codigo_barras,stock,stock_minimo,pvp,precio_compra,proveedor_id,ubicacion';
+const limpiarBusqueda = (s) => (s || '').replace(/[%,()*"\\]/g, ' ').trim().slice(0, 60);
+
+export function buscadorPiezas(cont, { onPick, fila, placeholder } = {}) {
+  cont.innerHTML = `<div class="buscador-pieza">
+    <input type="search" class="inp" data-bq placeholder="${attr(placeholder || 'Buscar por nombre, referencia o código de barras…')}" aria-label="Buscar pieza" maxlength="60" autocomplete="off" enterkeyhint="search">
+    <div class="muted small" data-bmsg>Escribe o pasa el lector de código de barras.</div>
+    <div class="list" data-bres></div></div>`;
+  const inp = cont.querySelector('[data-bq]'), res = cont.querySelector('[data-bres]'), msg = cont.querySelector('[data-bmsg]');
+  let P = [], turno = 0, t;
+  const pintar = () => {
+    res.innerHTML = P.map((p) => fila ? fila(p) : `<button type="button" class="pick" data-pick="${p.id}"><span class="grow"><b>${esc(p.nombre)}</b><span class="muted small">${esc(p.referencia)}${p.codigo_barras ? ' · ' + esc(p.codigo_barras) : ''}${p.ubicacion ? ' · ' + esc(p.ubicacion) : ''}</span></span><b style="color:${p.stock > 0 ? 'var(--ok)' : 'var(--bad)'}">stock ${p.stock}</b></button>`).join('');
+    res.querySelectorAll('[data-pick]').forEach((b) => b.addEventListener('click', () => onPick?.(P.find((x) => x.id == b.dataset.pick), b)));
+  };
+  async function buscar(exacto) {
+    const s = limpiarBusqueda(inp.value), my = ++turno;
+    if (!s) { P = []; pintar(); msg.textContent = 'Escribe o pasa el lector de código de barras.'; return; }
+    if (exacto) {
+      const E = ok(await sb.from('piezas').select(SEL_PIEZA_BUSCAR).or(`codigo_barras.eq.${s},referencia.eq.${s.toUpperCase()}`).limit(2));
+      if (my !== turno) return;
+      if (E.length === 1) { P = E; pintar(); msg.textContent = 'Encontrada por código.'; onPick?.(E[0], null, true); return; }
+    }
+    const R = ok(await sb.from('piezas').select(SEL_PIEZA_BUSCAR).or(`nombre.ilike.%${s}%,referencia.ilike.%${s}%,marca.ilike.%${s}%,codigo_barras.ilike.%${s}%`).order('nombre').limit(25));
+    if (my !== turno) return;
+    P = R; pintar();
+    msg.textContent = R.length ? (R.length === 25 ? 'Se muestran las 25 primeras: afina la búsqueda.' : `${R.length} encontradas.`) : 'No hay ninguna pieza con ese nombre, referencia o código.';
+  }
+  inp.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => buscar(false).catch(fail), 220); });
+  inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); clearTimeout(t); buscar(true).catch(fail); } });
+  setTimeout(() => inp.focus(), 50);
+  return { ocultar: () => { P = []; pintar(); msg.textContent = ''; }, limpiar: () => { inp.value = ''; P = []; pintar(); msg.textContent = 'Escribe o pasa el lector de código de barras.'; inp.focus(); }, recargar: () => buscar(false).catch(fail), input: inp };
 }
