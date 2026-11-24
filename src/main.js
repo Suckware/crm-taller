@@ -114,6 +114,7 @@ function avisoLicencia() {
 }
 
 async function salir() {
+  try { await sb.rpc('liberar_sesion'); } catch { /* sin conexión: caducará sola */ } // el usuario queda libre para otro dispositivo al momento
   await sb.auth.signOut();
   state.user = state.perfil = null;
   location.hash = '#/';
@@ -187,10 +188,14 @@ function renderLogin(msg = '') {
       err.textContent = /rate|many/i.test(error.message) ? 'Demasiados intentos. Espera un momento.' : 'Usuario o contraseña incorrectos.';
       return;
     }
-    try { await reclamarSesion(); } catch (e2) {
-      await sb.auth.signOut({ scope: 'local' });
+    let r;
+    try { r = await ocuparSesion('reclamar_sesion'); } catch (e2) {
+      r = { estado: 'error', mensaje: /acceso/i.test(e2.message || '') ? 'Este usuario no tiene acceso al taller.' : 'No se ha podido conectar. Inténtalo de nuevo.' };
+    }
+    if (r.estado !== 'ok') {
+      await sb.auth.signOut({ scope: 'local' }); // se descarta esta entrada; la otra sigue abierta
       btn.disabled = false; btn.textContent = 'Entrar';
-      err.textContent = /acceso/i.test(e2.message || '') ? 'Este usuario no tiene acceso al taller.' : 'No se ha podido conectar. Inténtalo de nuevo.';
+      err.textContent = r.mensaje || mensajeSesion(r);
       return;
     }
     await arrancar(data.session);
@@ -199,37 +204,46 @@ function renderLogin(msg = '') {
 }
 
 // ---------- Una sola sesión por usuario ----------
-// Al entrar con usuario y contraseña, esta sesión pasa a ser la única válida:
-// la base de datos deja de dar datos al otro dispositivo y aquí se le avisa.
+// Manda el primero que entró: si el usuario ya está abierto en otro dispositivo,
+// aquí no se entra y se dice dónde está abierto. Al de dentro no se le echa.
+// Mientras la app está abierta da señal de vida cada minuto; si un equipo se
+// apaga sin cerrar sesión, a los 10 minutos queda libre. El administrador
+// también puede cerrar sesiones desde Configuración > Usuarios.
+const MIN_CADUCIDAD = 10;
 function nombreDispositivo() {
   const ua = navigator.userAgent;
   const tipo = /iPad|Tablet/i.test(ua) || (/Android/i.test(ua) && !/Mobile/i.test(ua)) ? 'Tablet' : /Mobi|iPhone|Android/i.test(ua) ? 'Móvil' : 'Ordenador';
   const nav = /Edg\//.test(ua) ? 'Edge' : /Chrome\//.test(ua) ? 'Chrome' : /Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : 'navegador';
   return `${tipo} · ${nav}`;
 }
-async function reclamarSesion() {
-  const { error } = await sb.rpc('reclamar_sesion', { p_dispositivo: nombreDispositivo() });
+// reclamar_sesion al entrar; latido_sesion mientras se trabaja. Devuelve { estado: 'ok' | 'ocupada' | 'cerrada', ... }
+async function ocuparSesion(fn) {
+  const { data, error } = await sb.rpc(fn, { p_dispositivo: nombreDispositivo() });
   if (error) throw error;
+  return data || { estado: 'ok' };
 }
-// true si esta sesión sigue siendo la buena. Si otro dispositivo ha entrado, cierra aquí.
+function mensajeSesion(r) {
+  if (r.estado === 'cerrada') return 'El administrador ha cerrado tu sesión. Vuelve a entrar.';
+  const hora = r.ultimo ? new Date(r.ultimo).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : '';
+  return `Este usuario ya tiene la sesión abierta en otro dispositivo: ${r.dispositivo || 'otro equipo'}${hora ? ` (activo a las ${hora})` : ''}. `
+    + `Cierra la sesión allí para entrar aquí, o pide al administrador que la cierre. Si ese equipo se apagó sin cerrar sesión, podrás entrar pasados ${MIN_CADUCIDAD} minutos.`;
+}
+// true si esta sesión es la que tiene el usuario. Si no, sale de aquí y explica por qué.
 async function comprobarSesion() {
-  const { data, error } = await sb.rpc('sesion_estado');
-  if (error) return true; // sin conexión: no se echa a nadie por un fallo de red
-  if (data?.estado === 'libre') { await reclamarSesion().catch(() => {}); return true; }
-  if (data?.estado !== 'otra') return true;
+  let r;
+  try { r = await ocuparSesion('latido_sesion'); } catch { return true; } // sin conexión: no se saca a nadie por un fallo de red
+  if (r.estado === 'ok') return true;
   state.perfil = null;
   await sb.auth.signOut({ scope: 'local' });
-  const cuando = data.desde ? ` a las ${new Date(data.desde).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}` : '';
-  renderLogin(`Se ha cerrado la sesión porque este usuario ha entrado desde otro dispositivo (${data.dispositivo || 'otro equipo'}${cuando}).`);
+  renderLogin(mensajeSesion(r));
   return false;
 }
 let vigilando = false;
 function vigilarSesion() {
   if (vigilando) return; vigilando = true;
   const mirar = () => { if (state.perfil) comprobarSesion(); };
-  setInterval(mirar, 30_000);
+  setInterval(mirar, 60_000);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') mirar(); });
-  window.addEventListener('focus', mirar);
 }
 
 // ---------- He olvidado mi contraseña ----------
@@ -304,7 +318,13 @@ function renderNuevaClave(tokenHash) {
       return;
     }
     limpiarUrl();
-    try { await reclamarSesion(); } catch { await sb.auth.signOut({ scope: 'local' }); renderLogin('Este usuario no tiene acceso al taller.'); return; }
+    let r;
+    try { r = await ocuparSesion('reclamar_sesion'); } catch { r = { estado: 'error' }; }
+    if (r.estado !== 'ok') {
+      await sb.auth.signOut({ scope: 'local' });
+      renderLogin(`Contraseña cambiada. ${r.estado === 'error' ? 'No se ha podido entrar: inténtalo de nuevo.' : mensajeSesion(r)}`);
+      return;
+    }
     toast('Contraseña cambiada');
     await arrancar(data.session);
   });

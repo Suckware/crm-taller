@@ -1,17 +1,20 @@
 -- =====================================================================
 -- CRM taller · Una sola sesión por usuario + recuperar la contraseña
 -- =====================================================================
--- Sesión única
+-- Sesión única (manda el primero que entró)
 -- * public.sesiones guarda, por usuario, la sesión que vale ahora mismo
---   (session_id del token de Supabase Auth) y desde qué dispositivo.
--- * Al entrar con usuario y contraseña la app llama a reclamar_sesion():
---   esa sesión pasa a ser la buena y la del otro dispositivo deja de valer.
+--   (session_id del token de Supabase Auth), desde qué dispositivo y cuándo
+--   dio la última señal de vida (la app la da cada minuto mientras está abierta).
+-- * Si alguien intenta entrar con un usuario que ya está abierto en otro
+--   dispositivo, NO se le deja entrar: se le dice en qué dispositivo está
+--   abierto. Al que ya estaba dentro no se le echa nunca.
+-- * Sesiones colgadas (se apagó el equipo, se cerró el navegador sin salir):
+--   pasados 10 minutos sin señal de vida, la siguiente entrada puede ocuparla.
+--   Además el administrador puede cerrar la sesión de cualquiera desde
+--   Configuración > Usuarios. Al pulsar "Cerrar sesión" se libera al momento.
 -- * Se comprueba en la base de datos, no solo en pantalla: mi_rol() y
 --   es_personal() (de las que dependen todas las políticas RLS) solo dan
---   permiso a la sesión vigente. El otro dispositivo deja de ver datos al
---   instante y la app le muestra el aviso.
--- * Si un usuario aún no tiene fila (las sesiones abiertas antes de este
---   cambio) se le deja pasar hasta que reclame una.
+--   permiso a la sesión vigente.
 --
 -- Recuperar la contraseña
 -- * public.usuarios_correo: el correo real de cada persona (los usuarios
@@ -28,20 +31,26 @@ create table if not exists public.sesiones (
   user_id uuid primary key references auth.users (id) on delete cascade,
   session_id uuid not null,
   dispositivo text not null default '',
-  desde timestamptz not null default now()
+  desde timestamptz not null default now(),
+  ultimo timestamptz not null default now()
 );
 alter table public.sesiones enable row level security;
 revoke all on public.sesiones from public, anon, authenticated;
 -- Nadie la lee ni escribe directamente: solo a través de las funciones de abajo.
 
+-- Minutos sin señal de vida para dar una sesión por abandonada
+create or replace function public.sesion_minutos_caducidad()
+returns int language sql immutable as $$ select 10 $$;
+
+-- Esta petición viene de la sesión que tiene el usuario ocupado.
 create or replace function public.sesion_vigente()
 returns boolean
 language sql stable security definer set search_path = public
 as $$
-  select not exists (
+  select exists (
     select 1 from public.sesiones s
     where s.user_id = auth.uid()
-      and s.session_id::text is distinct from (auth.jwt() ->> 'session_id')
+      and s.session_id::text = (auth.jwt() ->> 'session_id')
   )
 $$;
 
@@ -59,13 +68,17 @@ as $$
   select exists (select 1 from perfiles where id = auth.uid() and activo) and public.sesion_vigente()
 $$;
 
--- La sesión con la que se acaba de entrar pasa a ser la única válida.
+-- Ocupar el usuario con esta sesión. Devuelve:
+--   {estado:'ok'}                                -> adelante
+--   {estado:'ocupada', dispositivo, ultimo}      -> abierto en otro dispositivo; no se entra
+--   {estado:'cerrada'}                           -> esta sesión ya no existe (la cerró el administrador)
 create or replace function public.reclamar_sesion(p_dispositivo text default '')
-returns void
+returns jsonb
 language plpgsql volatile security definer set search_path = public
 as $$
 declare
   v_sid uuid := nullif(auth.jwt() ->> 'session_id', '')::uuid;
+  v_s public.sesiones;
 begin
   if auth.uid() is null or v_sid is null then
     raise exception 'Sin sesión';
@@ -73,35 +86,83 @@ begin
   if not exists (select 1 from perfiles where id = auth.uid() and activo) then
     raise exception 'Este usuario no tiene acceso al taller';
   end if;
-  insert into public.sesiones (user_id, session_id, dispositivo, desde)
-  values (auth.uid(), v_sid, left(coalesce(p_dispositivo, ''), 80), now())
+  if not exists (select 1 from auth.sessions where id = v_sid and user_id = auth.uid()) then
+    return jsonb_build_object('estado', 'cerrada');
+  end if;
+  select * into v_s from public.sesiones where user_id = auth.uid() for update;
+  if found and v_s.session_id <> v_sid
+     and v_s.ultimo > now() - make_interval(mins => public.sesion_minutos_caducidad())
+     and exists (select 1 from auth.sessions where id = v_s.session_id) then
+    return jsonb_build_object('estado', 'ocupada', 'dispositivo', v_s.dispositivo, 'ultimo', v_s.ultimo);
+  end if;
+  insert into public.sesiones (user_id, session_id, dispositivo, desde, ultimo)
+  values (auth.uid(), v_sid, left(coalesce(p_dispositivo, ''), 80), now(), now())
   on conflict (user_id) do update
-    set session_id = excluded.session_id, dispositivo = excluded.dispositivo, desde = excluded.desde;
+    set session_id = excluded.session_id, dispositivo = excluded.dispositivo, desde = excluded.desde, ultimo = excluded.ultimo;
+  return jsonb_build_object('estado', 'ok');
 end;
 $$;
 
--- Para la app: 'ok' (esta sesión vale), 'libre' (aún no hay ninguna reclamada)
--- u 'otra' (el usuario ha entrado desde otro dispositivo, que se indica).
-create or replace function public.sesion_estado()
+-- Señal de vida de la sesión que tiene el usuario. Si ya no es la buena,
+-- intenta ocuparlo otra vez (por si quedó libre) y devuelve lo mismo que reclamar_sesion.
+create or replace function public.latido_sesion(p_dispositivo text default '')
 returns jsonb
+language plpgsql volatile security definer set search_path = public
+as $$
+begin
+  update public.sesiones set ultimo = now()
+  where user_id = auth.uid() and session_id::text = (auth.jwt() ->> 'session_id');
+  if found then return jsonb_build_object('estado', 'ok'); end if;
+  return public.reclamar_sesion(p_dispositivo);
+end;
+$$;
+
+-- Al pulsar "Cerrar sesión": el usuario queda libre al momento.
+create or replace function public.liberar_sesion()
+returns void
+language sql volatile security definer set search_path = public
+as $$
+  delete from public.sesiones where user_id = auth.uid() and session_id::text = (auth.jwt() ->> 'session_id')
+$$;
+
+-- Administrador: ver quién está conectado y desde dónde.
+create or replace function public.sesiones_abiertas()
+returns table (user_id uuid, dispositivo text, desde timestamptz, ultimo timestamptz, activa boolean)
 language sql stable security definer set search_path = public
 as $$
-  select case
-    when s.user_id is null then jsonb_build_object('estado', 'libre')
-    when s.session_id::text = (auth.jwt() ->> 'session_id') then jsonb_build_object('estado', 'ok')
-    else jsonb_build_object('estado', 'otra', 'dispositivo', s.dispositivo, 'desde', s.desde)
-  end
-  from (select auth.uid() as uid) u
-  left join public.sesiones s on s.user_id = u.uid
-  where u.uid is not null
+  select s.user_id, s.dispositivo, s.desde, s.ultimo,
+         s.ultimo > now() - make_interval(mins => public.sesion_minutos_caducidad())
+  from public.sesiones s
+  where public.es_admin()
+$$;
+
+-- Administrador: cerrar la sesión de otra persona (equipo perdido, sesión colgada).
+-- Se borra también la sesión de Supabase Auth, así ese dispositivo no puede volver a ocuparla.
+create or replace function public.cerrar_sesion_de(p_user uuid)
+returns void
+language plpgsql volatile security definer set search_path = public
+as $$
+declare v_sid uuid;
+begin
+  if not public.es_admin() then raise exception 'Solo el administrador'; end if;
+  if p_user = auth.uid() then raise exception 'No puedes cerrar tu propia sesión desde aquí'; end if;
+  delete from public.sesiones where user_id = p_user returning session_id into v_sid;
+  if v_sid is not null then delete from auth.sessions where id = v_sid; end if;
+end;
 $$;
 
 revoke all on function public.sesion_vigente() from public, anon;
 revoke all on function public.reclamar_sesion(text) from public, anon;
-revoke all on function public.sesion_estado() from public, anon;
+revoke all on function public.latido_sesion(text) from public, anon;
+revoke all on function public.liberar_sesion() from public, anon;
+revoke all on function public.sesiones_abiertas() from public, anon;
+revoke all on function public.cerrar_sesion_de(uuid) from public, anon;
 grant execute on function public.sesion_vigente() to authenticated;
 grant execute on function public.reclamar_sesion(text) to authenticated;
-grant execute on function public.sesion_estado() to authenticated;
+grant execute on function public.latido_sesion(text) to authenticated;
+grant execute on function public.liberar_sesion() to authenticated;
+grant execute on function public.sesiones_abiertas() to authenticated;
+grant execute on function public.cerrar_sesion_de(uuid) to authenticated;
 
 -- ---------- Correo para recuperar la contraseña ----------
 create table if not exists public.usuarios_correo (
