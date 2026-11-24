@@ -56,7 +56,6 @@ $$;
 revoke all on function public.licencia_incluye(text) from public, anon;
 grant execute on function public.licencia_incluye(text) to authenticated;
 
-drop policy if exists registro_solo_admin on public.registro_cambios;
 create policy registro_solo_admin on public.registro_cambios for select to authenticated
   using (public.es_admin() and public.licencia_incluye('AUDITORIA'));
 
@@ -67,11 +66,9 @@ begin
   raise exception 'El registro de cambios no se puede modificar ni borrar.' using errcode = 'P0001';
 end $$;
 
-drop trigger if exists registro_inmutable on public.registro_cambios;
-create trigger registro_inmutable before update or delete on public.registro_cambios
+create or replace trigger registro_inmutable before update or delete on public.registro_cambios
   for each row execute function public.tg_registro_inmutable();
-drop trigger if exists registro_inmutable_truncate on public.registro_cambios;
-create trigger registro_inmutable_truncate before truncate on public.registro_cambios
+create or replace trigger registro_inmutable_truncate before truncate on public.registro_cambios
   for each statement execute function public.tg_registro_inmutable();
 
 -- ---------- Disparador que apunta los cambios ----------
@@ -197,9 +194,8 @@ begin
   ) as x(tabla, ignorar, precios, linea, ocultar)
   loop
     if to_regclass('public.' || t.tabla) is null then continue; end if;
-    execute format('drop trigger if exists registro_cambios on public.%I', t.tabla);
     execute format(
-      'create trigger registro_cambios after insert or update or delete on public.%I
+      'create or replace trigger registro_cambios after insert or update or delete on public.%I
          for each row execute function public.tg_registro_cambios(%L, %L, %L, %L)',
       t.tabla, t.ignorar, t.precios, t.linea, t.ocultar);
   end loop;
