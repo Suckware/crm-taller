@@ -380,3 +380,7 @@ tr.grupo-cli td { background: var(--accent-soft); }
 .sync-aviso { margin: 0 0 12px; }
 .sync-aviso strong { font-weight: 700; }
 #sin-red { position: fixed; left: 50%; bottom: 84px; transform: translateX(-50%); z-index: 60; max-width: calc(100% - 32px); background: #8A1C1C; color: #fff; padding: 10px 16px; border-radius: 12px; font-size: 14px; box-shadow: 0 6px 20px rgba(0,0,0,.25); }
+@media (min-width: 1101px) {
+  .ficha-pieza .form > .field:first-child { grid-column: span 1; }
+  .ficha-pieza .form > .field:nth-child(2) { grid-column: span 2; }
+}
