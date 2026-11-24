@@ -18,7 +18,7 @@ const TABLAS = {
   citas: 'Cita', factura_lineas: 'Línea de factura', reparacion_piezas: 'Pieza en orden', reparacion_horas: 'Horas en orden',
   facturas: 'Factura', reparaciones: 'Orden de reparación', piezas: 'Artículo del almacén', clientes: 'Cliente / proveedor',
   contactos: 'Contacto', datos_bancarios: 'Datos bancarios', motos: 'Vehículo', perfiles: 'Usuario', tarifas: 'Tarifa',
-  impuestos: 'Impuesto', config: 'Configuración', factura_reparaciones: 'Orden en factura', remesas: 'Remesa', remesa_recibos: 'Recibo de remesa',
+  impuestos: 'Impuesto', config: 'Configuración', factura_reparaciones: 'Orden en factura', remesas: 'Remesa', remesa_recibos: 'Recibo de remesa', roles: 'Rol',
 };
 const ACCIONES = { alta: ['Alta', 'ok'], cambio: ['Cambio', 'info'], borrado: ['Borrado', 'bad'] };
 
@@ -29,6 +29,8 @@ const CAMPOS = {
   nombre: 'Nombre', referencia: 'Referencia', descuento_pct: 'Descuento %', tarifa_id: 'Tarifa', total: 'Total', base: 'Base', cuota: 'Cuota',
   impuesto_pct: 'Impuesto %', numero: 'Número', fecha: 'Fecha', rol: 'Rol', activo: 'Activo', usuario: 'Usuario', matricula: 'Matrícula',
   iban: 'IBAN', titular: 'Titular', porcentaje: 'Porcentaje', forma_pago: 'Forma de pago',
+  acceso_ios: 'Entra desde iPhone/iPad', acceso_android: 'Entra desde Android', acceso_windows: 'Entra desde Windows', acceso_otros: 'Entra desde otros equipos',
+  ventanas: 'Ventanas', nivel: 'Permisos', tecnico: 'Sale como mecánico',
 };
 const DINERO = new Set(['precio', 'importe', 'pvp', 'precio_compra', 'precio_hora', 'total', 'base', 'cuota', 'importe_max_autorizado']);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -40,6 +42,7 @@ function valor(k, v) {
   if (typeof v === 'boolean') return v ? 'Sí' : 'No';
   if (typeof v === 'string' && UUID.test(v) && (k === 'tecnico_id' || k === 'usuario_id' || k === 'creada_por')) return nombreTecnico(v);
   if (typeof v === 'string' && FECHA_HORA.test(v)) return fdt(v);
+  if (Array.isArray(v)) return v.join(', ') || '—';
   if (typeof v === 'object') return JSON.stringify(v);
   return String(v);
 }
@@ -102,7 +105,7 @@ export async function render(el, params) {
   const mas = el.querySelector('[data-mas]');
   const fila = (r, i) => `<tr data-i="${i}" style="cursor:pointer"><td class="num" style="white-space:nowrap">${esc(fdt(r.fecha))}</td><td>${esc(r.usuario_nombre)}</td>
     <td>${(() => { const [t, c] = ACCIONES[r.accion] || [r.accion, '']; return `<span class="chip ${c}">${esc(t)}</span>`; })()}${r.precio_cambiado ? ' <span class="chip warn">Precio</span>' : ''}</td>
-    <td>${esc(TABLAS[r.tabla] || r.tabla)}</td><td>${esc(r.referencia)}</td><td class="small">${resumen(r)}</td></tr>`;
+    <td>${esc(TABLAS[r.tabla] || r.tabla)}</td><td>${esc(r.referencia || (r.tabla === 'roles' ? (r.despues || r.antes)?.nombre || state.roles.find((x) => String(x.id) === String(r.registro_id))?.nombre || '' : ''))}</td><td class="small">${resumen(r)}</td></tr>`;
   const cargar = async () => {
     mas.disabled = true;
     const R = ok(await consulta(p, filas.length));

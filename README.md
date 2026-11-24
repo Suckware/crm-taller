@@ -39,3 +39,14 @@ Menú **Registro de cambios**: quién ha dado de alta, cambiado o borrado qué y
 - No se puede modificar ni borrar: nadie tiene permiso de escritura sobre `registro_cambios` y un disparador rechaza UPDATE, DELETE y TRUNCATE.
 - Solo lo lee el administrador. Con licencia activada, además hace falta el módulo `AUDITORIA` (se apunta igual aunque no lo tenga).
 - De los datos bancarios solo se apunta qué campo cambió, no su valor.
+
+## Roles, ventanas y dispositivos
+
+Configuración › **Roles y ventanas** (solo administrador): cada rol decide qué ventanas del menú ve (Agenda, Reparaciones y recepción, Clientes, Almacén, Facturación) y su tipo de permisos (Oficina: cambia precios, stock y factura; Taller: consulta el almacén, no factura). Se pueden crear roles nuevos. El Administrador lo ve todo siempre.
+
+Configuración › **Usuarios**: en cada persona se marca desde qué equipos puede entrar (iPhone/iPad, Android, Windows, otros).
+
+- Lo comprueba la base de datos (`supabase/migrations/20261124140000_roles_y_dispositivos.sql`): el sistema del equipo se saca del navegador que hace cada petición, al entrar y en cada operación. Si se quita un dispositivo a alguien conectado desde él, queda fuera al momento.
+- Sin la ventana Facturación en el rol, la base de datos no deja leer ni hacer facturas ni remesas.
+- Nadie puede cambiarse a sí mismo el rol, el acceso ni los dispositivos, y siempre queda al menos un administrador activo.
+- Los cambios en roles y usuarios quedan en el Registro de cambios.

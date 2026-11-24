@@ -4,7 +4,7 @@ import '@fontsource/plus-jakarta-sans/600.css';
 import '@fontsource/plus-jakarta-sans/700.css';
 import '@fontsource/plus-jakarta-sans/800.css';
 import './styles.css';
-import { sb, state, esc, attr, toast, cargarComunes, DOMINIO_USUARIOS, puedeFacturar, esAdmin, licEstado, tieneModulo, refrescarLicencia, fdate } from './lib.js';
+import { sb, state, esc, attr, toast, cargarComunes, DOMINIO_USUARIOS, puedeFacturar, esAdmin, puedeVentana, nombreRol, licEstado, tieneModulo, refrescarLicencia, fdate } from './lib.js';
 import { I } from './icons.js';
 import { activarCodigoPostal } from './cp.js';
 import * as panel from './views/panel.js';
@@ -23,7 +23,9 @@ const app = document.getElementById('app');
 
 // Qué módulo de la licencia hace falta para cada sección del menú
 const MODULO_DE = { agenda: ['AGENDA'], rep: ['AUTORIZACION', 'REPARACIONES'], clientes: ['CLIENTES'], almacen: ['ALMACEN'], fact: ['FACTURACION'] };
-const permitido = (k) => !MODULO_DE[k] || tieneModulo(...MODULO_DE[k]);
+// Y qué ventanas tiene el rol del usuario (Configuración › Roles)
+const VENTANA_ROL = ['agenda', 'rep', 'clientes', 'almacen', 'fact'];
+const permitido = (k) => (!VENTANA_ROL.includes(k) || puedeVentana(k)) && (!MODULO_DE[k] || tieneModulo(...MODULO_DE[k]));
 
 const ROUTES = [
   [/^\/?$/, panel.render, 'panel'],
@@ -62,7 +64,7 @@ function shell(active) {
   const nav = items.map(([h, k, t, ic]) => `<a href="${h}" class="${k === active ? 'on' : ''}" title="${attr(t)}">${ic}<span>${esc(t)}</span></a>`).join('');
   const bottom = items.filter(([, k]) => ['panel', 'agenda', 'rep', 'clientes', 'almacen'].includes(k))
     .map(([h, k, t, ic]) => `<a href="${h}" class="${k === active ? 'on' : ''}">${ic}<span>${esc(t)}</span></a>`).join('');
-  const rolTxt = { admin: 'Administrador', recepcion: 'Recepción', comercial: 'Comercial', mecanico: 'Mecánico' }[state.perfil.rol];
+  const rolTxt = nombreRol(state.perfil.rol);
   app.innerHTML = `
   <div class="shell ${menuFijo() ? '' : 'plegado'}">
     <nav class="side" aria-label="Principal">
@@ -221,14 +223,19 @@ function nombreDispositivo() {
   const nav = /Edg\//.test(ua) ? 'Edge' : /Chrome\//.test(ua) ? 'Chrome' : /Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : 'navegador';
   return `${tipo} · ${nav}`;
 }
+// El iPad con Safari se presenta como un Mac: esta pista solo sirve para distinguirlo.
+// Qué sistema es lo decide la base de datos con el navegador de la petición.
+const pistaSistema = () => (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1 ? 'ios' : '');
+const NOMBRE_SISTEMA = { ios: 'iPhone o iPad', android: 'Android', windows: 'Windows', otros: 'este tipo de equipo' };
 // reclamar_sesion al entrar; latido_sesion mientras se trabaja. Devuelve { estado: 'ok' | 'ocupada' | 'cerrada', ... }
 async function ocuparSesion(fn) {
-  const { data, error } = await sb.rpc(fn, { p_dispositivo: nombreDispositivo() });
+  const { data, error } = await sb.rpc(fn, { p_dispositivo: nombreDispositivo(), p_pista: pistaSistema() });
   if (error) throw error;
   return data || { estado: 'ok' };
 }
 function mensajeSesion(r) {
   if (r.estado === 'cerrada') return 'El administrador ha cerrado tu sesión. Vuelve a entrar.';
+  if (r.estado === 'dispositivo') return `Tu usuario no tiene permiso para entrar desde ${NOMBRE_SISTEMA[r.plataforma] || 'este equipo'}. Pide al administrador que te lo active en Configuración › Usuarios.`;
   const hora = r.ultimo ? new Date(r.ultimo).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : '';
   return `Este usuario ya tiene la sesión abierta en otro dispositivo: ${r.dispositivo || 'otro equipo'}${hora ? ` (activo a las ${hora})` : ''}. `
     + `Cierra la sesión allí para entrar aquí, o pide al administrador que la cierre. Si ese equipo se apagó sin cerrar sesión, podrás entrar pasados ${MIN_CADUCIDAD} minutos.`;
