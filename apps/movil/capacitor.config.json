@@ -1,0 +1,21 @@
+{
+  "appId": "app.sergiomotosport.taller",
+  "appName": "SMS Taller",
+  "webDir": "web",
+  "server": {
+    "url": "https://suckware.github.io/crm-taller/",
+    "cleartext": false,
+    "androidScheme": "https",
+    "errorPath": "index.html"
+  },
+  "android": {
+    "allowMixedContent": false,
+    "webContentsDebuggingEnabled": false
+  },
+  "ios": {
+    "contentInset": "never",
+    "limitsNavigationsToAppBoundDomains": false
+  },
+  "loggingBehavior": "none",
+  "backgroundColor": "#F1F3F9"
+}

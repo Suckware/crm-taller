@@ -1,0 +1,12 @@
+{
+  "name": "crm-taller-windows",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "iconos": "tauri icon ../../public/icono-512.png",
+    "build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.6"
+  }
+}

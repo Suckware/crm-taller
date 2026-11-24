@@ -1,0 +1,84 @@
+name: Instaladores (Windows, Android, iOS)
+
+# Genera los instaladores para descargarlos desde la pestaña "Actions".
+# No publica nada en ninguna tienda ni toca la web.
+on:
+  pull_request:
+    paths:
+      - 'apps/**'
+      - '.github/workflows/instaladores.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: apps/windows
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/windows/src-tauri
+      - run: npm ci
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SMS-Taller-Windows
+          path: |
+            apps/windows/src-tauri/target/release/bundle/nsis/*.exe
+            apps/windows/src-tauri/target/release/bundle/msi/*.msi
+          if-no-files-found: error
+
+  android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/movil
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      # El SDK de Android ya viene instalado en ubuntu-latest (ANDROID_HOME).
+      - run: npm ci
+      - run: npm run preparar:android
+      - name: Compilar APK de pruebas
+        run: cd android && ./gradlew assembleDebug --no-daemon
+      - run: mv android/app/build/outputs/apk/debug/app-debug.apk SMS-Taller.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SMS-Taller-Android
+          path: apps/movil/SMS-Taller.apk
+          if-no-files-found: error
+
+  ios:
+    # Sin cuenta de Apple solo se comprueba que el proyecto compila.
+    # Para instalar en un iPhone hay que firmarlo con Xcode (ver apps/README.md).
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: apps/movil
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run preparar:ios
+      - name: Compilar para el simulador (sin firmar)
+        run: |
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO build | tail -20

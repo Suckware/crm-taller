@@ -379,6 +379,11 @@ sb.auth.onAuthStateChange((ev) => {
 
 activarCodigoPostal();
 
+// Permite instalar la app (Windows, Android, iPhone) desde el navegador.
+if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  navigator.serviceWorker.register('./sw.js', { scope: './' }).catch((e) => console.warn('SW', e));
+}
+
 // Aviso en cualquier dispositivo cuando se queda sin internet
 function avisoRed() {
   let b = document.getElementById('sin-red');
