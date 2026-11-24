@@ -440,3 +440,22 @@ grant execute on function public.facturar_reparacion(bigint, integer), public.fa
   public.rectificar_factura(bigint, text), public.por_facturar(), public.crear_remesa(bigint[], date, text),
   public.remesa_cambiar_estado(bigint, text), public.devolver_recibo(bigint, text), public.reparacion_facturada(bigint),
   public.sepa_id_acreedor(text, text), public.dia_taller(timestamptz), public.hoy_taller() to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Registro de cambios (si ya está instalado): también en las tablas nuevas.
+-- En los recibos no se guardan los datos bancarios del cliente (como en datos_bancarios).
+-- ---------------------------------------------------------------------------
+do $$
+begin
+  if to_regproc('public.tg_registro_cambios') is not null then
+    create or replace trigger registro_cambios after insert or update or delete on public.remesas
+      for each row execute function public.tg_registro_cambios('created_at', '', '', '');
+    create or replace trigger registro_cambios after insert or update or delete on public.remesa_recibos
+      for each row execute function public.tg_registro_cambios('', '', '', 'titular,iban,bic,mandato,fecha_mandato');
+    create or replace trigger registro_cambios after insert or update or delete on public.factura_reparaciones
+      for each row execute function public.tg_registro_cambios('', '', '', '');
+    -- el contador de remesas, como los de facturas, no se apunta
+    create or replace trigger registro_cambios after insert or update or delete on public.config
+      for each row execute function public.tg_registro_cambios('siguiente_factura,siguiente_rectificativa,siguiente_remesa', 'precio_hora', '', '');
+  end if;
+end $$;
