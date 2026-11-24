@@ -13,14 +13,47 @@ export async function render(el, params) {
   const T = el.querySelector('[data-tab]');
 
   if (tab === 'facturas') {
-    const est = params.e || '';
-    let q = sb.from('facturas').select('*,clientes(nombre),reparaciones!facturas_reparacion_id_fkey(numero)').order('created_at', { ascending: false }).limit(200);
-    if (est === 'rectificativa') q = q.eq('tipo', 'rectificativa'); else if (est) q = q.eq('estado', est);
-    const F = ok(await q);
-    T.innerHTML = `<div class="agenda-bar">${[['', 'Todas'], ['pendiente', 'Pendientes'], ['cobrada', 'Cobradas'], ['anulada', 'Anuladas'], ['rectificativa', 'Rectificativas']].map(([k, t]) => `<a class="btn sm ${est === k ? 'pri' : ''}" href="#/facturacion?t=facturas&e=${k}">${t}</a>`).join('')}</div>
+    // Filtros: fechas en el servidor; cliente, estado y número al momento
+    const hoy = today();
+    const d1 = /^\d{4}-\d{2}-\d{2}$/.test(params.d1 || '') ? params.d1 : isoDay(new Date(new Date().getFullYear(), new Date().getMonth() - 2, 1, 12));
+    const d2 = /^\d{4}-\d{2}-\d{2}$/.test(params.d2 || '') ? params.d2 : hoy;
+    const F = ok(await sb.from('facturas').select('*,clientes(nombre),reparaciones!facturas_reparacion_id_fkey(numero)').gte('fecha', d1).lte('fecha', d2)
+      .order('fecha', { ascending: false }).order('id', { ascending: false }).limit(2000));
+    const ESTADOS = [['pendiente', 'Pendiente de cobro'], ['cobrada', 'Cobrada'], ['anulada', 'Anulada'], ['rectificativa', 'Rectificativa']];
+    T.innerHTML = `<section class="card filtros-mov" data-fil><div class="form">
+        ${field('Desde', 'd1', d1, 'date', `max="${hoy}"`)}${field('Hasta', 'd2', d2, 'date')}
+        ${field('Cliente', 'cli', '', 'search', 'placeholder="Nombre del cliente" maxlength="60"')}
+        <div class="field"><label for="ff-e">Estado</label><select id="ff-e" name="est">${opt('', 'Todos', params.e || '')}${ESTADOS.map(([k, t]) => opt(k, t, params.e || '')).join('')}</select></div>
+        ${field('Número', 'num', '', 'search', 'placeholder="Nº de factura u orden" maxlength="30"')}
+      </div><div class="actions"><span class="muted small" data-cuenta></span><button type="button" class="btn sm" data-limpiar>Quitar filtros</button></div></section>
     <section class="card"><div class="tablewrap"><table><thead><tr><th>Nº</th><th>Fecha</th><th>Cliente</th><th>Reparación</th><th class="right">Base</th><th class="right">Impuesto</th><th class="right">Total</th><th>Estado</th></tr></thead>
-    <tbody>${F.map((f) => `<tr class="click" data-id="${f.id}"><td><b>${esc(f.numero)}</b></td><td>${fdate(f.fecha)}</td><td>${esc(f.clientes?.nombre)}</td><td>${esc(f.reparaciones?.numero || '')}</td><td class="right num">${money(f.base)}</td><td class="right num">${money(f.cuota)} <span class="small muted">${esc(f.impuesto_nombre)} ${Number(f.impuesto_pct)}%</span></td><td class="right num"><b>${money(f.total)}</b></td><td>${chipF(f.estado)}</td></tr>`).join('') || '<tr><td colspan="8" class="empty">Sin facturas</td></tr>'}</tbody></table></div></section>`;
-    T.querySelectorAll('tr[data-id]').forEach((tr) => tr.addEventListener('click', () => { location.hash = `#/factura/${tr.dataset.id}`; }));
+    <tbody>${F.map((f, i) => `<tr class="click" data-id="${f.id}" data-i="${i}"><td><b>${esc(f.numero)}</b></td><td>${fdate(f.fecha)}</td><td>${esc(f.clientes?.nombre)}</td><td>${esc(f.reparaciones?.numero || '')}</td><td class="right num">${money(f.base)}</td><td class="right num">${money(f.cuota)} <span class="small muted">${esc(f.impuesto_nombre)} ${Number(f.impuesto_pct)}%</span></td><td class="right num"><b>${money(f.total)}</b></td><td>${chipF(f.estado)}</td></tr>`).join('')}
+    <tr data-vacio style="display:none"><td colspan="8" class="empty">Sin facturas con estos filtros</td></tr></tbody>
+    <tfoot><tr><td colspan="4"><b>Total filtrado</b></td><td class="right num" data-sb></td><td class="right num" data-sc></td><td class="right num" data-st></td><td></td></tr></tfoot></table></div></section>`;
+    const Fi = T.querySelector('[data-fil]');
+    const filas = [...T.querySelectorAll('tr[data-i]')];
+    const aplicar = () => {
+      const o = formData(Fi); const cl = (o.cli || '').toLowerCase(); const nu = (o.num || '').toLowerCase();
+      let n = 0, b = 0, c = 0, t = 0;
+      filas.forEach((tr) => {
+        const f = F[tr.dataset.i];
+        const v = (!cl || (f.clientes?.nombre || '').toLowerCase().includes(cl)) && (!nu || `${f.numero} ${f.reparaciones?.numero || ''}`.toLowerCase().includes(nu))
+          && (!o.est || (o.est === 'rectificativa' ? f.tipo === 'rectificativa' : f.estado === o.est));
+        tr.style.display = v ? '' : 'none';
+        if (v) { n++; b += Number(f.base); c += Number(f.cuota); t += Number(f.total); }
+      });
+      T.querySelector('[data-vacio]').style.display = n ? 'none' : '';
+      T.querySelector('[data-sb]').textContent = money(b); T.querySelector('[data-sc]').textContent = money(c); T.querySelector('[data-st]').textContent = money(t);
+      Fi.querySelector('[data-cuenta]').textContent = `${n} de ${F.length} facturas`;
+    };
+    Fi.querySelectorAll('[name=cli],[name=est],[name=num]').forEach((x) => x.addEventListener('input', aplicar));
+    Fi.querySelectorAll('[name=d1],[name=d2]').forEach((x) => x.addEventListener('change', () => {
+      const a = Fi.querySelector('[name=d1]').value, z = Fi.querySelector('[name=d2]').value;
+      if (a && z && a <= z) location.hash = `#/facturacion?${new URLSearchParams({ t: 'facturas', d1: a, d2: z })}`;
+    }));
+    Fi.querySelector('[data-limpiar]').addEventListener('click', () => { location.hash = '#/facturacion?t=facturas&r=' + Date.now(); });
+    filas.forEach((tr) => tr.addEventListener('click', () => { location.hash = `#/factura/${tr.dataset.id}`; }));
+    aplicar();
   }
 
   if (tab === 'pendientes') await renderPendientes(T, params);
@@ -163,88 +196,108 @@ const mesDe = (dia) => dia.slice(0, 7);
 // Plazo legal de una factura recapitulativa a empresas: antes del día 16 del mes siguiente
 const plazoMes = (mes) => { const [y, m] = mes.split('-').map(Number); return isoDay(new Date(y, m, 15, 12)); };
 
+// Una sola lista de albaranes con filtros (fechas, cliente, periodicidad, situación).
+// Se marca lo que interese y sale una factura por cliente y mes.
 async function renderPendientes(T, params) {
   const hoy = today();
-  const per = Object.hasOwn(NOMBRE_P, params.p) ? params.p : '';
-  // Sin fecha elegida: automático, cada cliente hasta el final de su último periodo cerrado
-  const manual = /^\d{4}-\d{2}-\d{2}$/.test(params.h || '') ? (params.h <= hoy ? params.h : hoy) : null;
-  const corteDe = (periodo) => manual || ultimoCorte(periodo, hoy);
-  const R = ok(await sb.rpc('por_facturar')).filter((r) => !per || r.periodo === per);
-  const entra = (r) => r.estado !== 'en_reparacion' && r.dia_fin && r.dia_fin <= corteDe(r.periodo) && r.lineas > 0;
-  const grupos = new Map();
-  R.filter(entra).forEach((r) => {
-    if (!grupos.has(r.cliente_id)) grupos.set(r.cliente_id, { id: r.cliente_id, nombre: r.cliente, periodo: r.periodo, ordenes: [] });
-    grupos.get(r.cliente_id).ordenes.push(r);
-  });
-  const G = [...grupos.values()].map((g) => {
-    const base = g.ordenes.reduce((s, o) => s + Number(o.base), 0);
-    const meses = [...new Set(g.ordenes.map((o) => mesDe(o.dia_fin)))].sort();
-    // ¿Ha terminado ya el periodo de alguna de sus órdenes?
-    const toca = g.periodo === 'inmediata' || g.ordenes.some((o) => finPeriodo(o.dia_fin, g.periodo) < hoy);
-    const proximo = g.ordenes.map((o) => finPeriodo(o.dia_fin, g.periodo)).sort()[0];
-    const plazo = meses[0] < mesDe(hoy) ? plazoMes(meses[0]) : null;
-    return { ...g, base, meses, toca, proximo, plazo, corte: corteDe(g.periodo) };
-  });
-  const fuera = R.filter((r) => !entra(r));
-  const adelantable = (r) => r.estado !== 'en_reparacion' && r.dia_fin && r.lineas > 0;
+  const R = ok(await sb.rpc('por_facturar'));
   const imp = state.impuestos.find((i) => i.por_defecto) || state.impuestos[0];
-  const link = (o) => `#/facturacion?${new URLSearchParams({ t: 'pendientes', ...(o.p ? { p: o.p } : {}), ...(o.h ? { h: o.h } : {}) })}`;
-  const estadoG = (g) => {
-    const out = [g.toca ? '<span class="chip warn">Toca facturar</span>' : `<span class="chip">Periodo abierto hasta ${fdate(g.proximo)}</span>`];
-    if (g.plazo) out.push(hoy > g.plazo ? `<span class="chip bad">Fuera de plazo (límite ${fdate(g.plazo)})</span>` : `<span class="chip info">Facturar como tarde el ${fdate(g.plazo)}</span>`);
-    if (g.meses.length > 1) out.push(`<span class="small muted">${g.meses.length} facturas (una por mes)</span>`);
-    return out.join(' ');
+  const facturable = (r) => r.estado !== 'en_reparacion' && r.dia_fin && r.lineas > 0;
+  // ¿Ha terminado el periodo de facturación del cliente para esta orden?
+  const toca = (r) => facturable(r) && (r.periodo === 'inmediata' || finPeriodo(r.dia_fin, r.periodo) < hoy);
+  const dia = (r) => r.dia_fin || isoDay(r.fecha_entrada);
+  const situacion = (r) => {
+    if (r.estado === 'en_reparacion') return '<span class="chip">En reparación</span>';
+    if (!(r.lineas > 0)) return '<span class="chip">Sin piezas ni horas</span>';
+    if (toca(r)) {
+      const lim = mesDe(r.dia_fin) < mesDe(hoy) ? plazoMes(mesDe(r.dia_fin)) : null;
+      return `<span class="chip warn">Toca facturar</span>${lim ? (hoy > lim ? ` <span class="chip bad">Fuera de plazo (${fdate(lim)})</span>` : ` <span class="small muted">como tarde el ${fdate(lim)}</span>`) : ''}`;
+    }
+    return `<span class="small muted">Su periodo cierra el ${fdate(finPeriodo(r.dia_fin, r.periodo))}</span>`;
   };
+  // Agrupar por cliente
+  const porCliente = new Map();
+  R.forEach((r) => { if (!porCliente.has(r.cliente_id)) porCliente.set(r.cliente_id, []); porCliente.get(r.cliente_id).push(r); });
+  const C = [...porCliente.entries()].map(([id, rs]) => ({ id, nombre: rs[0].cliente, periodo: rs[0].periodo, rs }));
 
   T.innerHTML = `
-  <div class="agenda-bar">${[['', 'Todos'], ...Object.entries(NOMBRE_P)].map(([k, t]) => `<a class="btn sm ${per === k ? 'pri' : ''}" href="${link({ p: k })}">${esc(t)}</a>`).join('')}</div>
-  <section class="card" data-per>
-    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
-      <div class="field"><label for="pf-h">Facturar hasta el día</label><input id="pf-h" type="date" class="inp" value="${attr(manual || '')}" max="${attr(hoy)}"></div>
-      ${manual ? `<a class="btn" href="${link({ p: per })}" style="margin-bottom:2px">Automático</a>` : '<span class="small muted" style="padding-bottom:10px">Automático: cada cliente hasta el último día de su periodo ya terminado.</span>'}
-      <div class="field" style="min-width:200px"><label for="pf-imp">Impuesto</label><select id="pf-imp" class="inp">${state.impuestos.filter((i) => i.activo).map((i) => opt(i.id, `${i.nombre} ${Number(i.porcentaje).toLocaleString('es-ES')} %`, imp?.id)).join('')}</select></div>
-      ${!manual && per && per !== 'inmediata' ? `<span class="small muted" style="padding-bottom:10px">Último periodo cerrado (${esc(PERIODOS[per])}): hasta el ${fdate(ultimoCorte(per, hoy))}</span>` : ''}
+  <section class="card filtros-mov" data-fil>
+    <div class="form">
+      ${field('Desde', 'd1', params.d1 || '', 'date', `max="${hoy}"`)}${field('Hasta', 'd2', params.d2 || '', 'date', `max="${hoy}"`)}
+      ${field('Cliente', 'cli', '', 'search', 'placeholder="Nombre del cliente" maxlength="60"')}
+      <div class="field"><label for="pf-per">Periodicidad</label><select id="pf-per" name="per">${opt('', 'Todas', '')}${Object.entries(NOMBRE_P).map(([k, t]) => opt(k, t, '')).join('')}</select></div>
+      <div class="field"><label for="pf-sit">Situación</label><select id="pf-sit" name="sit">${opt('', 'Todas', '')}${opt('toca', 'Toca facturar', '')}${opt('notoca', 'Aún no toca', '')}</select></div>
     </div>
-    <p class="muted small" style="margin:0">Órdenes terminadas (listas o entregadas) sin factura. Se hace <b>una factura por cliente y mes</b> con todas sus órdenes. La periodicidad de cada cliente se pone en su ficha, pestaña Pagos.</p>
-    <div class="tablewrap"><table><thead><tr><th style="width:34px"><input type="checkbox" data-all aria-label="Marcar todos"></th><th>Cliente</th><th>Facturación</th><th>Hasta</th><th>Albaranes</th><th class="right">Base</th><th>Estado</th></tr></thead>
-    <tbody>${G.map((g) => `<tr><td><input type="checkbox" data-c="${g.id}" ${g.toca ? 'checked' : ''} aria-label="Facturar a ${attr(g.nombre)}"></td>
-      <td><a href="#/cliente/${g.id}?t=pago"><b>${esc(g.nombre)}</b></a></td><td>${esc(NOMBRE_P[g.periodo] || g.periodo)}</td><td>${fdate(g.corte)}</td>
-      <td class="small">${g.ordenes.map((o) => `<div><a href="#/reparacion/${o.id}">${esc(o.numero)}</a> · ${fdate(o.dia_fin)}${o.moto ? ` · ${esc(o.moto)}` : ''} · <span class="num">${money(o.base)}</span></div>`).join('')}</td>
-      <td class="right num"><b>${money(g.base)}</b></td><td>${estadoG(g)}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">No hay albaranes pendientes de facturar</td></tr>'}</tbody></table></div>
-    ${G.length || fuera.some(adelantable) ? '<div class="actions"><button type="button" class="btn pri" data-gen></button><span class="small muted">La base no incluye el descuento del cliente; se aplica en la factura.</span></div>' : ''}
+    <div class="actions"><span class="muted small" data-cuenta></span><button type="button" class="btn sm" data-marcar>Marcar todo lo filtrado</button><button type="button" class="btn sm" data-desmarcar>Desmarcar todo</button><button type="button" class="btn sm" data-limpiar>Quitar filtros</button></div>
   </section>
-  ${fuera.length ? `<section class="card"><h2>Todavía no toca</h2><p class="muted small" style="margin:0">Órdenes de un periodo que aún no ha terminado, en el taller o sin importe. <b>Marca las que quieras adelantar</b> y entran en las facturas que generes arriba (si son del mismo cliente y mes, en la misma factura).</p>
-    <div class="tablewrap"><table><thead><tr><th style="width:34px"></th><th>Orden</th><th>Cliente</th><th>Moto</th><th>Situación</th><th class="right">Base</th><th></th></tr></thead>
-    <tbody>${fuera.map((r) => `<tr><td>${adelantable(r) ? `<input type="checkbox" data-o="${r.id}" aria-label="Adelantar ${attr(r.numero)}">` : ''}</td><td><a href="#/reparacion/${r.id}">${esc(r.numero)}</a></td><td>${esc(r.cliente)}</td><td>${esc(r.moto || '')}</td>
-      <td class="small">${r.estado === 'en_reparacion' ? 'En reparación' : !(r.lineas > 0) ? 'Sin piezas ni horas' : `Terminada el ${fdate(r.dia_fin)} · ${manual ? 'después de la fecha elegida' : `su periodo cierra el ${fdate(finPeriodo(r.dia_fin, r.periodo))}`}`}</td><td class="right num">${money(r.base)}</td>
-      <td class="right">${r.estado === 'en_reparacion' && r.lineas > 0 ? `<a class="btn sm" href="#/reparacion/${r.id}?t=factura">Facturar</a>` : ''}</td></tr>`).join('')}</tbody></table></div></section>` : ''}`;
+  <section class="card">
+    <p class="muted small" style="margin:0">Órdenes sin factura. Marca las que quieras facturar: sale <b>una factura por cliente y mes</b> con todas sus órdenes marcadas. Vienen marcadas las que ya toca facturar según la periodicidad de cada cliente (ficha › Pagos).</p>
+    <div class="tablewrap"><table><thead><tr><th style="width:34px"></th><th>Orden</th><th>Terminada</th><th>Moto</th><th>Situación</th><th class="right">Base</th></tr></thead>
+    <tbody>${C.map((c) => `<tr class="grupo-cli" data-c="${c.id}"><td><input type="checkbox" data-cc="${c.id}" aria-label="Marcar todo ${attr(c.nombre)}"></td>
+        <td colspan="4"><a href="#/cliente/${c.id}?t=pago"><b>${esc(c.nombre)}</b></a> <span class="small muted">· ${esc(NOMBRE_P[c.periodo] || c.periodo)}</span></td><td class="right num" data-tc></td></tr>
+      ${c.rs.map((r) => `<tr data-r="${r.id}" data-cli="${c.id}"><td>${facturable(r) ? `<input type="checkbox" data-o="${r.id}" ${toca(r) ? 'checked' : ''} aria-label="Facturar ${attr(r.numero)}">` : ''}</td>
+        <td><a href="#/reparacion/${r.id}">${esc(r.numero)}</a></td><td>${r.dia_fin ? fdate(r.dia_fin) : '—'}</td><td class="small">${esc(r.moto || '')}</td>
+        <td>${situacion(r)}${r.estado === 'en_reparacion' && r.lineas > 0 ? ` <a class="btn sm" href="#/reparacion/${r.id}?t=factura">Facturar</a>` : ''}</td><td class="right num">${money(r.base)}</td></tr>`).join('')}`).join('')}
+      <tr data-vacio style="display:none"><td colspan="6" class="empty">Nada pendiente con estos filtros</td></tr>
+      ${R.length ? '' : '<tr><td colspan="6" class="empty">No hay órdenes pendientes de facturar</td></tr>'}</tbody></table></div>
+    <div class="actions" style="align-items:flex-end">
+      <div class="field" style="min-width:200px"><label for="pf-imp">Impuesto</label><select id="pf-imp" class="inp">${state.impuestos.filter((i) => i.activo).map((i) => opt(i.id, `${i.nombre} ${Number(i.porcentaje).toLocaleString('es-ES')} %`, imp?.id)).join('')}</select></div>
+      <button type="button" class="btn pri" data-gen></button><span class="small muted">La base no incluye el descuento del cliente; se aplica en la factura.</span>
+    </div>
+  </section>`;
 
-  T.querySelector('#pf-h').addEventListener('change', (e) => { location.hash = link({ p: per, h: e.target.value ? (e.target.value > hoy ? hoy : e.target.value) : '' }); });
-  const boxes = [...T.querySelectorAll('[data-c]')];
-  const extras = [...T.querySelectorAll('[data-o]')];
+  const F = T.querySelector('[data-fil]');
   const btn = T.querySelector('[data-gen]');
-  // Órdenes marcadas: las de los clientes marcados arriba + las adelantadas de abajo
-  const elegidas = () => [
-    ...G.filter((g) => boxes.find((b) => b.dataset.c == g.id)?.checked).flatMap((g) => g.ordenes),
-    ...fuera.filter((r) => extras.find((b) => b.dataset.o == r.id)?.checked),
-  ];
-  const resumen = () => {
-    const O = elegidas();
-    return { O, n: new Set(O.map((o) => `${o.cliente_id}|${mesDe(o.dia_fin)}`)).size, clientes: new Set(O.map((o) => o.cliente_id)).size, base: O.reduce((s, o) => s + Number(o.base), 0), adelantadas: O.filter((o) => fuera.includes(o)).length };
-  };
+  const filas = [...T.querySelectorAll('tr[data-r]')];
+  const cabeceras = [...T.querySelectorAll('tr[data-c]')];
+  const porId = Object.fromEntries(R.map((r) => [r.id, r]));
+  const visible = (tr) => tr.style.display !== 'none';
+  const marcadas = () => filas.filter((tr) => visible(tr) && tr.querySelector('[data-o]')?.checked).map((tr) => porId[tr.dataset.r]);
   const pinta = () => {
-    if (!btn) return;
-    const { n, base } = resumen();
-    btn.textContent = n ? `Generar ${n} ${n === 1 ? 'factura' : 'facturas'} · ${money(base)}` : 'Marca lo que quieras facturar';
+    const O = marcadas();
+    const n = new Set(O.map((o) => `${o.cliente_id}|${mesDe(o.dia_fin)}`)).size;
+    btn.textContent = n ? `Generar ${n} ${n === 1 ? 'factura' : 'facturas'} · ${money(O.reduce((s, o) => s + Number(o.base), 0))}` : 'Marca lo que quieras facturar';
     btn.disabled = !n;
+    cabeceras.forEach((h) => {
+      const fs = filas.filter((tr) => tr.dataset.cli === h.dataset.c && visible(tr));
+      const bs = fs.map((tr) => tr.querySelector('[data-o]')).filter(Boolean);
+      const cb = h.querySelector('[data-cc]');
+      cb.checked = bs.length > 0 && bs.every((b) => b.checked); cb.indeterminate = bs.some((b) => b.checked) && !cb.checked; cb.disabled = !bs.length;
+      h.querySelector('[data-tc]').textContent = money(fs.filter((tr) => tr.querySelector('[data-o]')?.checked).reduce((s, tr) => s + Number(porId[tr.dataset.r].base), 0));
+    });
   };
-  [...boxes, ...extras].forEach((b) => b.addEventListener('change', pinta));
-  T.querySelector('[data-all]')?.addEventListener('change', (e) => { boxes.forEach((b) => { b.checked = e.target.checked; }); pinta(); });
-  pinta();
-  btn?.addEventListener('click', () => {
-    const { O, n, clientes, adelantadas } = resumen();
+  const aplicar = () => {
+    const o = formData(F); const cl = (o.cli || '').toLowerCase();
+    let n = 0;
+    filas.forEach((tr) => {
+      const r = porId[tr.dataset.r], d = dia(r);
+      const v = (!o.d1 || d >= o.d1) && (!o.d2 || d <= o.d2) && (!cl || r.cliente.toLowerCase().includes(cl)) && (!o.per || r.periodo === o.per)
+        && (!o.sit || (o.sit === 'toca' ? toca(r) : !toca(r)));
+      tr.style.display = v ? '' : 'none'; if (v) n++;
+    });
+    cabeceras.forEach((h) => { h.style.display = filas.some((tr) => tr.dataset.cli === h.dataset.c && visible(tr)) ? '' : 'none'; });
+    T.querySelector('[data-vacio]').style.display = n || !R.length ? 'none' : '';
+    F.querySelector('[data-cuenta]').textContent = `${n} de ${R.length} órdenes`;
+    pinta();
+  };
+  F.querySelectorAll('input,select').forEach((x) => x.addEventListener('input', aplicar));
+  T.querySelectorAll('[data-o]').forEach((b) => b.addEventListener('change', pinta));
+  T.querySelectorAll('[data-cc]').forEach((cb) => cb.addEventListener('change', () => {
+    filas.filter((tr) => tr.dataset.cli === cb.dataset.cc && visible(tr)).forEach((tr) => { const b = tr.querySelector('[data-o]'); if (b) b.checked = cb.checked; });
+    pinta();
+  }));
+  const marcarTodo = (v) => { filas.filter(visible).forEach((tr) => { const b = tr.querySelector('[data-o]'); if (b) b.checked = v; }); pinta(); };
+  F.querySelector('[data-marcar]').addEventListener('click', () => marcarTodo(true));
+  F.querySelector('[data-desmarcar]').addEventListener('click', () => marcarTodo(false));
+  F.querySelector('[data-limpiar]').addEventListener('click', () => { F.querySelectorAll('input,select').forEach((x) => { x.value = ''; }); aplicar(); });
+  aplicar();
+
+  btn.addEventListener('click', () => {
+    const O = marcadas();
+    const n = new Set(O.map((o) => `${o.cliente_id}|${mesDe(o.dia_fin)}`)).size;
+    const clientes = new Set(O.map((o) => o.cliente_id)).size;
     const impSel = state.impuestos.find((i) => i.id == T.querySelector('#pf-imp').value);
-    modal('Generar facturas', `<p style="margin:0">Se van a emitir <b>${n} ${n === 1 ? 'factura' : 'facturas'}</b> con fecha de hoy (${fdate(hoy)}) para ${clientes} ${clientes === 1 ? 'cliente' : 'clientes'}, con <b>${O.length} ${O.length === 1 ? 'orden' : 'órdenes'}</b>${adelantadas ? ` (${adelantadas} ${adelantadas === 1 ? 'adelantada' : 'adelantadas'})` : ''}. Impuesto: ${esc(impSel ? `${impSel.nombre} ${Number(impSel.porcentaje).toLocaleString('es-ES')} %` : '')}.</p>
+    modal('Generar facturas', `<p style="margin:0">Se van a emitir <b>${n} ${n === 1 ? 'factura' : 'facturas'}</b> con fecha de hoy (${fdate(hoy)}) para ${clientes} ${clientes === 1 ? 'cliente' : 'clientes'}, con <b>${O.length} ${O.length === 1 ? 'orden' : 'órdenes'}</b>. Impuesto: ${esc(impSel ? `${impSel.nombre} ${Number(impSel.porcentaje).toLocaleString('es-ES')} %` : '')}.</p>
       <p class="muted small" style="margin:0">Las facturas emitidas no se borran: si hay un error, se anulan con una rectificativa y las órdenes vuelven aquí.</p>`, {
       okText: 'Emitir facturas',
       onOk: async () => {
