@@ -192,6 +192,7 @@ export const MODULOS_CRM = {
   AGENDA: 'Agenda y citas', CLIENTES: 'Clientes y proveedores', VEHICULOS: 'Vehículos', AUTORIZACION: 'Hoja de autorización',
   REPARACIONES: 'Reparaciones', ALMACEN: 'Almacén', FACTURACION: 'Facturación (ordenador)', APPS: 'Apps Android, iOS y Windows',
   SEDES: 'Varias sedes', INFORMES: 'Informes', RECORDATORIOS: 'Recordatorios ITV y revisión', MEDIDA: 'Logo, colores y campos a medida',
+  AUDITORIA: 'Registro de cambios e informes',
 };
 // Plan según los módulos: Premium si trae alguno de Premium, Profesional si trae alguno de Profesional
 export function licPlan(l = state.licencia) {

@@ -282,3 +282,55 @@ tfoot td { font-weight: 700; border-bottom: 0; }
 .lic-mods { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px 14px; margin: 6px 0 0; padding: 0; list-style: none; }
 .lic-mods li { display: flex; gap: 8px; align-items: center; font-size: 14px; }
 .lic-mods li.no { color: var(--muted); text-decoration: line-through; }
+.login .linkbtn { background: none; border: 0; color: var(--accent); font: inherit; font-size: 14px; text-decoration: underline; cursor: pointer; padding: 6px; align-self: center; }
+
+/* Importar datos */
+.imp-pasos { display: flex; flex-wrap: wrap; gap: 8px 22px; list-style: none; margin: 0; padding: 0; color: var(--muted); font-size: 14px; }
+.imp-pasos li { display: flex; align-items: center; gap: 8px; }
+.imp-pasos b { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: #E5E7EB; color: #374151; font-size: 13px; }
+.imp-pasos .on { color: var(--ink); font-weight: 700; }
+.imp-pasos .on b { background: var(--accent); color: #fff; }
+.imp-pasos .hecho b { background: var(--ok-bg); color: var(--ok); }
+.imp-tipos { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.imp-tipo { position: relative; display: flex; flex-direction: column; gap: 6px; text-align: left; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius); background: #fff; cursor: pointer; }
+.imp-tipo:hover { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.imp-tipo.off { cursor: default; background: #F8F9FC; opacity: .75; border-style: dashed; }
+.imp-tipo.off:hover { border-color: var(--line); box-shadow: none; }
+.imp-ic svg { width: 26px; height: 26px; color: var(--accent); }
+.imp-n { position: absolute; top: 12px; right: 14px; font-size: 12px; font-weight: 700; color: var(--muted); }
+.imp-ayuda { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+.imp-drop { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 36px 16px; border: 2px dashed #C9D0DD; border-radius: var(--radius); background: #F8F9FC; cursor: pointer; text-align: center; }
+.imp-drop.over, .imp-drop:hover { border-color: var(--accent); background: var(--accent-soft); }
+.imp-drop:focus-within { outline: 2px solid var(--accent); }
+.imp-map select { min-width: 220px; }
+.imp-map td { vertical-align: top; }
+.imp-res { display: flex; flex-wrap: wrap; gap: 10px; }
+.imp-res > div { min-width: 120px; padding: 12px 14px; border-radius: 12px; background: #F3F4F6; display: flex; flex-direction: column; font-size: 13px; color: #374151; }
+.imp-res b { font-size: 24px; font-variant-numeric: tabular-nums; }
+.imp-res .ok { background: var(--ok-bg); color: var(--ok); }
+.imp-res .info { background: var(--info-bg); color: var(--info); }
+.imp-res .warn { background: var(--warn-bg); color: var(--warn); }
+.imp-res .bad { background: var(--bad-bg); color: var(--bad); }
+.imp-prog { display: flex; flex-direction: column; gap: 6px; }
+.imp-prog > div { height: 10px; border-radius: 999px; background: #E5E7EB; overflow: hidden; }
+.imp-prog i { display: block; height: 100%; background: var(--accent); transition: width .2s; }
+.imp-prev td { vertical-align: top; }
+.imp-aviso { color: var(--warn); }
+.imp-err { color: var(--bad); font-weight: 600; }
+.imp-prog[hidden] { display: none; }
+.reg-filtros { align-items: flex-end; }
+.reg-filtros label { display: flex; flex-direction: column; gap: 2px; color: var(--muted); flex: 0 0 auto; height: auto; }
+.reg-filtros .inp { height: 44px; min-height: 44px; width: auto; flex: 0 0 auto !important; }
+@media (max-width: 720px) {
+  .reg-filtros { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .reg-filtros .inp, .reg-filtros .search { width: 100%; max-width: none; }
+  .reg-filtros .search, .reg-filtros button { grid-column: 1 / -1; }
+  .reg-tabla thead { display: none; }
+  .reg-tabla tr { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .reg-tabla td { display: block; border: 0; padding: 0; }
+  .reg-tabla td:nth-child(3) { text-align: right; }
+  .reg-tabla td:nth-child(n+4) { grid-column: 1 / -1; }
+  .reg-tabla td:nth-child(4) { color: var(--muted); font-size: 13px; }
+}
+.reg-c { display: inline-block; margin-right: 10px; }
+.reg-c s { color: var(--muted); }
