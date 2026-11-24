@@ -2,14 +2,14 @@ import { createClient } from '@supabase/supabase-js';
 
 // Solo la clave pública (publishable). La seguridad la aplica la base de datos con RLS por roles.
 export const SUPABASE_URL = 'https://sxrakoktzmwjmzlmnvts.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_VW3JAL_qNwgqBRPGEkF4CQ_INJjwP51';
+export const SUPABASE_KEY = 'sb_publishable_VW3JAL_qNwgqBRPGEkF4CQ_INJjwP51';
 export const DOMINIO_USUARIOS = 'sergiomotosport.app';
 
 export const sb = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: { persistSession: true, autoRefreshToken: true, storageKey: 'sms-taller-auth' },
 });
 
-export const state = { user: null, perfil: null, config: null, perfiles: [], impuestos: [], tarifas: [], campos: [], licencia: null };
+export const state = { user: null, perfil: null, config: null, perfiles: [], roles: [], impuestos: [], tarifas: [], campos: [], licencia: null };
 
 // ---------- Escapado (evita XSS: todo dato de la BD pasa por aquí) ----------
 export function esc(v) {
@@ -62,11 +62,27 @@ export function ultimoCorte(periodo, hoy = today()) {
 
 export const chip = (map, k) => { const [t, c] = map[k] || [k, '']; return `<span class="chip ${c}">${esc(t)}</span>`; };
 
+// ---------- Roles (Configuración › Roles) ----------
+// Esto solo decide qué se enseña. Lo que se puede leer y guardar lo decide la base de datos.
+export const VENTANAS = [['agenda', 'Agenda'], ['rep', 'Reparaciones y recepción'], ['clientes', 'Clientes y proveedores'], ['almacen', 'Almacén'], ['fact', 'Facturación']];
+export const NIVELES = { admin: 'Administrador: todo', oficina: 'Oficina: cambia precios, stock y factura', taller: 'Taller: consulta el almacén, no factura' };
+export const DISPOSITIVOS = [['acceso_ios', 'iPhone / iPad'], ['acceso_android', 'Android'], ['acceso_windows', 'Windows'], ['acceso_otros', 'Otros (Mac, Linux)']];
 export const rol = () => state.perfil?.rol;
-export const esOficina = () => ['admin', 'recepcion', 'comercial'].includes(rol());
-export const esAdmin = () => rol() === 'admin';
+// Los de serie, por si la base de datos aún no tiene la tabla de roles
+const ROLES_SERIE = [
+  { clave: 'admin', nombre: 'Administrador', nivel: 'admin', ventanas: ['agenda', 'rep', 'clientes', 'almacen', 'fact'], tecnico: true, sistema: true },
+  { clave: 'recepcion', nombre: 'Recepción', nivel: 'oficina', ventanas: ['agenda', 'rep', 'clientes', 'almacen', 'fact'], tecnico: true, sistema: true },
+  { clave: 'comercial', nombre: 'Comercial', nivel: 'oficina', ventanas: ['agenda', 'rep', 'clientes', 'almacen', 'fact'], tecnico: false, sistema: true },
+  { clave: 'mecanico', nombre: 'Mecánico', nivel: 'taller', ventanas: ['agenda', 'rep', 'clientes', 'almacen'], tecnico: true, sistema: true },
+];
+export const rolDe = (clave) => (state.roles.length ? state.roles : ROLES_SERIE).find((r) => r.clave === clave);
+export const nombreRol = (clave) => rolDe(clave)?.nombre || clave || '';
+const nivel = () => rolDe(rol())?.nivel || 'taller';
+export const esOficina = () => ['admin', 'oficina'].includes(nivel());
+export const esAdmin = () => nivel() === 'admin';
+export const puedeVentana = (v) => esAdmin() || !!rolDe(rol())?.ventanas?.includes(v);
 export const esEscritorio = () => window.matchMedia('(min-width: 1101px)').matches;
-export const puedeFacturar = () => esOficina() && esEscritorio();
+export const puedeFacturar = () => esOficina() && esEscritorio() && puedeVentana('fact');
 export const nombreTecnico = (id) => state.perfiles.find((p) => p.id === id)?.nombre || 'Sin asignar';
 export const colorTecnico = (id) => state.perfiles.find((p) => p.id === id)?.color || '#1F3A6E';
 
@@ -134,7 +150,7 @@ export const select = (label, name, options, extra = '') =>
   `<div class="field"><label for="f-${name}">${esc(label)}</label><select id="f-${name}" name="${name}" ${extra}>${options}</select></div>`;
 
 export const tecnicoOpts = (sel, vacio = true) =>
-  (vacio ? opt('', 'Sin asignar', sel ?? '') : '') + state.perfiles.filter((p) => p.activo && p.rol !== 'comercial').map((p) => opt(p.id, p.nombre, sel)).join('');
+  (vacio ? opt('', 'Sin asignar', sel ?? '') : '') + state.perfiles.filter((p) => p.activo && rolDe(p.rol)?.tecnico !== false).map((p) => opt(p.id, p.nombre, sel)).join('');
 
 // Color: valida hex
 export const hex = (c, def) => (/^#[0-9a-f]{6}$/i.test(c || '') ? c : def);
@@ -156,17 +172,19 @@ function mix(a, b, t) {
 }
 
 export async function cargarComunes() {
-  const [c, p, i, t, cp, l] = await Promise.all([
+  const [c, p, i, t, cp, l, r] = await Promise.all([
     sb.from('config').select('*').eq('id', 1).single(),
     sb.from('perfiles').select('*').order('nombre'),
     sb.from('impuestos').select('*').order('id'),
     sb.from('tarifas').select('*').order('id'),
     sb.from('campos_personalizados').select('*').order('orden'),
     sb.from('licencia').select('*').eq('id', 1).maybeSingle(),
+    sb.from('roles').select('*').order('nombre'),
   ]);
   if (c.error) throw c.error;
   state.config = c.data; state.perfiles = p.data || []; state.impuestos = i.data || [];
   state.tarifas = t.data || []; state.campos = cp.data || []; state.licencia = l.data || null;
+  state.roles = r.data || [];
   aplicarTema(state.config);
 }
 

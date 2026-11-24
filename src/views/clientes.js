@@ -1,5 +1,5 @@
 import { sb, state, esc, attr, ok, fdate, ftime, money, chip, ESTADOS_REP, ESTADOS_CITA, modal, toast, fail, formData, field, area, opt, puedeFacturar, esAdmin, esOficina, confirmar, PERIODOS } from '../lib.js';
-import { formCliente, validarCliente, nuevoCliente, editarVehiculo, alertasVehiculo } from './comun.js';
+import { formCliente, validarCliente, nuevoCliente, editarVehiculo, alertasVehiculo, cargarVentas, tablaVentas } from './comun.js';
 import { I } from '../icons.js';
 import { ibanValido } from '../sepa.js';
 
@@ -40,7 +40,7 @@ export async function renderFicha(el, params) {
   ]);
   const c = ok(cq), M = ok(mq), K = ok(kq);
   const tabs = [['datos', 'Datos'], ['contactos', `Contactos (${K.length})`], ['pago', esAdmin() ? 'Pagos y banco' : 'Pagos']];
-  if (c.es_cliente) tabs.push(['vehiculos', `Vehículos (${M.length})`], ['historial', 'Reparaciones'], ['citas', 'Citas']);
+  if (c.es_cliente) tabs.push(['vehiculos', `Vehículos (${M.length})`], ['historial', 'Reparaciones'], ['piezas', 'Piezas compradas'], ['citas', 'Citas']);
   if (c.es_proveedor) tabs.push(['compras', 'Compras']);
   if (c.es_cliente && puedeFacturar()) tabs.push(['facturas', 'Facturas']);
   const tab = tabs.some(([k]) => k === params.t) ? params.t : 'datos';
@@ -49,14 +49,15 @@ export async function renderFicha(el, params) {
   <div class="head"><div class="t"><div class="muted small"><a href="#/clientes">Clientes y proveedores</a> › ficha</div><h1>${esc(c.nombre)}</h1>
     <div class="muted" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">${rolChips(c)}${c.telefono ? `<a href="tel:${attr(c.telefono)}">${esc(c.telefono)}</a>` : ''}${c.email ? `<a href="mailto:${attr(c.email)}">${esc(c.email)}</a>` : ''}${tarifa ? `<span class="chip">Tarifa ${esc(tarifa.nombre)}</span>` : ''}${Number(c.descuento_pct) ? `<span class="chip ok">Dto. ${Number(c.descuento_pct)} %</span>` : ''}</div></div>
     ${c.es_cliente ? `<div class="actions"><a class="btn" href="#/cita/nueva?cliente=${id}">${I.agenda} Nueva cita</a><a class="btn pri" href="#/recepcion?cliente=${id}">Recibir moto</a></div>` : ''}</div>
-  ${c.notas_agenda ? `<div class="aviso"><b>Nota del cliente</b><span>${esc(c.notas_agenda)}</span></div>` : ''}
+  ${c.notas_agenda ? `<div class="aviso fila"><b>Nota del cliente</b><span>${esc(c.notas_agenda)}</span></div>` : ''}
   <nav class="tabs">${tabs.map(([k, t]) => `<a href="#/cliente/${id}?t=${k}" class="${k === tab ? 'on' : ''}">${esc(t)}</a>`).join('')}</nav>
   <div data-tab></div>`;
   const T = el.querySelector('[data-tab]');
   const recargar = () => renderFicha(el, params);
 
   if (tab === 'datos') {
-    T.innerHTML = `<section class="card" data-f>${formCliente(c)}<div class="actions"><button type="button" class="btn pri" data-g>Guardar cambios</button>${esAdmin() ? '<button type="button" class="btn danger" data-del>Eliminar ficha</button>' : ''}</div><p class="muted small" style="margin:0">Alta: ${fdate(c.created_at)}</p></section>`;
+    // En ordenador la ficha se compacta para verla entera sin usar el scroll
+    T.innerHTML = `<section class="card ficha-compacta" data-f>${formCliente(c)}<div class="actions"><button type="button" class="btn pri" data-g>Guardar cambios</button>${esAdmin() ? '<button type="button" class="btn danger" data-del>Eliminar ficha</button>' : ''}<span class="muted small">Alta: ${fdate(c.created_at)}</span></div></section>`;
     T.querySelector('[data-g]').addEventListener('click', async () => {
       try { const o = validarCliente(formData(T.querySelector('[data-f]')), c); ok(await sb.from('clientes').update(o).eq('id', id)); toast('Ficha guardada'); recargar(); } catch (e) { fail(e); }
     });
@@ -143,6 +144,7 @@ export async function renderFicha(el, params) {
     const R = ok(await sb.from('reparaciones').select('id,numero,estado,fecha_entrada,motivo,motos(marca,modelo)').eq('cliente_id', id).order('fecha_entrada', { ascending: false }));
     T.innerHTML = `<section class="card"><div class="list">${R.map((r) => `<a href="#/reparacion/${r.id}"><span class="grow"><b>${esc(r.numero)} · ${esc(r.motos ? r.motos.marca + ' ' + r.motos.modelo : '')}</b><span class="muted small">${fdate(r.fecha_entrada)} · ${esc(r.motivo || '')}</span></span>${chip(ESTADOS_REP, r.estado)}</a>`).join('') || '<div class="empty">Sin reparaciones</div>'}</div></section>`;
   }
+  if (tab === 'piezas') tablaVentas(T, await cargarVentas({ cliente: id }), { porPieza: false });
   if (tab === 'citas') {
     const A = ok(await sb.from('citas').select('id,inicio,servicio,estado').eq('cliente_id', id).order('inicio', { ascending: false }).limit(30));
     T.innerHTML = `<section class="card"><div class="list">${A.map((a) => `<a href="#/agenda?d=${a.inicio.slice(0, 10)}&v=dia&c=${a.id}"><b class="num" style="width:130px">${fdate(a.inicio)} ${ftime(a.inicio)}</b><span class="grow">${esc(a.servicio)}</span>${chip(ESTADOS_CITA, a.estado)}</a>`).join('') || '<div class="empty">Sin citas</div>'}</div></section>`;
@@ -151,7 +153,7 @@ export async function renderFicha(el, params) {
     const prov = (await sb.from('proveedores').select('id').eq('tercero_id', id).maybeSingle()).data;
     const Mv = prov ? ok(await sb.from('movimientos_stock').select('fecha,cantidad,precio,nota,piezas(nombre,referencia)').eq('proveedor_id', prov.id).eq('tipo', 'entrada').order('fecha', { ascending: false }).limit(100)) : [];
     const P = prov ? ok(await sb.from('piezas').select('id,referencia,nombre,stock,precio_compra').eq('proveedor_id', prov.id).order('nombre')) : [];
-    T.innerHTML = `<div class="row"><section class="card"><h2>Piezas que nos suministra</h2><div class="list">${P.map((p) => `<a href="#/almacen?q=${encodeURIComponent(p.referencia)}"><span class="grow"><b>${esc(p.nombre)}</b><span class="muted small">${esc(p.referencia)} · compra ${money(p.precio_compra)}</span></span><b>stock ${p.stock}</b></a>`).join('') || '<div class="empty">Sin piezas</div>'}</div></section>
+    T.innerHTML = `<div class="row"><section class="card"><h2>Piezas que nos suministra</h2><div class="list">${P.map((p) => `<a href="#/pieza/${p.id}"><span class="grow"><b>${esc(p.nombre)}</b><span class="muted small">${esc(p.referencia)} · compra ${money(p.precio_compra)}</span></span><b>stock ${p.stock}</b></a>`).join('') || '<div class="empty">Sin piezas</div>'}</div></section>
       <section class="card"><h2>Últimas compras</h2><div class="list">${Mv.map((m) => `<div><span class="grow"><b>${esc(m.piezas?.nombre)}</b><span class="muted small">${fdate(m.fecha)} · ${esc(m.nota || '')}</span></span><span class="num">${m.cantidad} × ${money(m.precio)}</span></div>`).join('') || '<div class="empty">Sin compras</div>'}</div>
       ${esOficina() ? '<a class="btn" href="#/almacen?t=compras" style="align-self:flex-start">Registrar compra</a>' : ''}</section></div>`;
   }

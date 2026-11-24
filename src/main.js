@@ -4,9 +4,10 @@ import '@fontsource/plus-jakarta-sans/600.css';
 import '@fontsource/plus-jakarta-sans/700.css';
 import '@fontsource/plus-jakarta-sans/800.css';
 import './styles.css';
-import { sb, state, esc, attr, toast, cargarComunes, DOMINIO_USUARIOS, puedeFacturar, esAdmin, licEstado, tieneModulo, refrescarLicencia, fdate } from './lib.js';
+import { sb, state, esc, attr, toast, cargarComunes, DOMINIO_USUARIOS, puedeFacturar, esAdmin, puedeVentana, nombreRol, licEstado, tieneModulo, refrescarLicencia, fdate } from './lib.js';
 import { I } from './icons.js';
 import { activarCodigoPostal } from './cp.js';
+import { iniciarLatido, pararLatido, avisarCierre } from './sync.js';
 import * as panel from './views/panel.js';
 import * as agenda from './views/agenda.js';
 import * as cita from './views/cita.js';
@@ -23,7 +24,9 @@ const app = document.getElementById('app');
 
 // Qué módulo de la licencia hace falta para cada sección del menú
 const MODULO_DE = { agenda: ['AGENDA'], rep: ['AUTORIZACION', 'REPARACIONES'], clientes: ['CLIENTES'], almacen: ['ALMACEN'], fact: ['FACTURACION'] };
-const permitido = (k) => !MODULO_DE[k] || tieneModulo(...MODULO_DE[k]);
+// Y qué ventanas tiene el rol del usuario (Configuración › Roles)
+const VENTANA_ROL = ['agenda', 'rep', 'clientes', 'almacen', 'fact'];
+const permitido = (k) => (!VENTANA_ROL.includes(k) || puedeVentana(k)) && (!MODULO_DE[k] || tieneModulo(...MODULO_DE[k]));
 
 const ROUTES = [
   [/^\/?$/, panel.render, 'panel'],
@@ -35,6 +38,7 @@ const ROUTES = [
   [/^\/clientes$/, clientes.renderLista, 'clientes'],
   [/^\/cliente\/(\d+)$/, clientes.renderFicha, 'clientes'],
   [/^\/almacen$/, almacen.render, 'almacen'],
+  [/^\/pieza\/(\d+)$/, almacen.renderFicha, 'almacen'],
   [/^\/facturacion$/, facturacion.render, 'fact'],
   [/^\/factura\/(\d+)$/, facturacion.renderFactura, 'fact'],
   [/^\/config$/, config.render, 'config'],
@@ -61,7 +65,7 @@ function shell(active) {
   const nav = items.map(([h, k, t, ic]) => `<a href="${h}" class="${k === active ? 'on' : ''}" title="${attr(t)}">${ic}<span>${esc(t)}</span></a>`).join('');
   const bottom = items.filter(([, k]) => ['panel', 'agenda', 'rep', 'clientes', 'almacen'].includes(k))
     .map(([h, k, t, ic]) => `<a href="${h}" class="${k === active ? 'on' : ''}">${ic}<span>${esc(t)}</span></a>`).join('');
-  const rolTxt = { admin: 'Administrador', recepcion: 'Recepción', comercial: 'Comercial', mecanico: 'Mecánico' }[state.perfil.rol];
+  const rolTxt = nombreRol(state.perfil.rol);
   app.innerHTML = `
   <div class="shell ${menuFijo() ? '' : 'plegado'}">
     <nav class="side" aria-label="Principal">
@@ -117,6 +121,7 @@ function avisoLicencia() {
 }
 
 async function salir() {
+  await avisarCierre(); pararLatido(); // el equipo del taller se cierra bien: nadie verá el aviso amarillo
   try { await sb.rpc('liberar_sesion'); } catch { /* sin conexión: caducará sola */ } // el usuario queda libre para otro dispositivo al momento
   await sb.auth.signOut();
   state.user = state.perfil = null;
@@ -153,7 +158,8 @@ async function route() {
   }
   window.scrollTo(0, 0);
 }
-window.addEventListener('hashchange', route);
+// Se guarda la pantalla anterior para los botones "Volver"
+window.addEventListener('hashchange', (e) => { try { state.anterior = new URL(e.oldURL).hash || '#/'; } catch { state.anterior = null; } route(); });
 let lastDesk = window.matchMedia('(min-width: 1101px)').matches;
 window.addEventListener('resize', () => {
   const d = window.matchMedia('(min-width: 1101px)').matches;
@@ -220,14 +226,19 @@ function nombreDispositivo() {
   const nav = /Edg\//.test(ua) ? 'Edge' : /Chrome\//.test(ua) ? 'Chrome' : /Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : 'navegador';
   return `${tipo} · ${nav}`;
 }
+// El iPad con Safari se presenta como un Mac: esta pista solo sirve para distinguirlo.
+// Qué sistema es lo decide la base de datos con el navegador de la petición.
+const pistaSistema = () => (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1 ? 'ios' : '');
+const NOMBRE_SISTEMA = { ios: 'iPhone o iPad', android: 'Android', windows: 'Windows', otros: 'este tipo de equipo' };
 // reclamar_sesion al entrar; latido_sesion mientras se trabaja. Devuelve { estado: 'ok' | 'ocupada' | 'cerrada', ... }
 async function ocuparSesion(fn) {
-  const { data, error } = await sb.rpc(fn, { p_dispositivo: nombreDispositivo() });
+  const { data, error } = await sb.rpc(fn, { p_dispositivo: nombreDispositivo(), p_pista: pistaSistema() });
   if (error) throw error;
   return data || { estado: 'ok' };
 }
 function mensajeSesion(r) {
   if (r.estado === 'cerrada') return 'El administrador ha cerrado tu sesión. Vuelve a entrar.';
+  if (r.estado === 'dispositivo') return `Tu usuario no tiene permiso para entrar desde ${NOMBRE_SISTEMA[r.plataforma] || 'este equipo'}. Pide al administrador que te lo active en Configuración › Usuarios.`;
   const hora = r.ultimo ? new Date(r.ultimo).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : '';
   return `Este usuario ya tiene la sesión abierta en otro dispositivo: ${r.dispositivo || 'otro equipo'}${hora ? ` (activo a las ${hora})` : ''}. `
     + `Cierra la sesión allí para entrar aquí, o pide al administrador que la cierre. Si ese equipo se apagó sin cerrar sesión, podrás entrar pasados ${MIN_CADUCIDAD} minutos.`;
@@ -348,6 +359,7 @@ async function arrancar(session) {
   try { await cargarComunes(); } catch (e) { renderLogin('No se ha podido conectar. Inténtalo de nuevo.'); return; }
   route();
   vigilarSesion();
+  iniciarLatido(); // solo hace algo si este ordenador es el equipo del taller
   // Una vez al entrar (como mucho cada 6 h) se pregunta a la consola cómo está la licencia
   const antes = JSON.stringify(state.licencia);
   refrescarLicencia().then(() => { if (JSON.stringify(state.licencia) !== antes) route(); }).catch((e) => console.warn(e));
@@ -366,3 +378,17 @@ sb.auth.onAuthStateChange((ev) => {
 })();
 
 activarCodigoPostal();
+
+// Aviso en cualquier dispositivo cuando se queda sin internet
+function avisoRed() {
+  let b = document.getElementById('sin-red');
+  if (navigator.onLine) { b?.remove(); return; }
+  if (!b) {
+    b = document.createElement('div'); b.id = 'sin-red'; b.setAttribute('role', 'status');
+    b.textContent = 'Sin conexión a internet. Lo que guardes ahora puede fallar: espera a que vuelva la conexión.';
+    document.body.append(b);
+  }
+}
+addEventListener('online', avisoRed);
+addEventListener('offline', avisoRed);
+avisoRed();

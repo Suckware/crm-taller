@@ -1,7 +1,8 @@
-import { sb, state, esc, attr, ok, modal, toast, fail, formData, field, area, opt, esAdmin, aplicarTema, cargarComunes, hex, money, fdate, fdt, licEstado, licPlan, MODULOS_CRM, refrescarLicencia, activarLicencia } from '../lib.js';
+import { sb, state, esc, attr, ok, modal, toast, fail, formData, field, area, opt, esAdmin, aplicarTema, cargarComunes, hex, money, fdate, fdt, licEstado, licPlan, MODULOS_CRM, refrescarLicencia, activarLicencia, nombreRol, VENTANAS, NIVELES, DISPOSITIVOS, confirmar } from '../lib.js';
 import { ibanValido, bicValido, idAcreedor } from '../sepa.js';
 import { CONDICIONES_DEF } from './recepcion.js';
 import * as importar from './importar.js';
+import { equipoLocal, marcarEquipoLocal, iniciarLatido, pararLatido, avisarCierre, estadoSync } from '../sync.js';
 
 const TEMAS = [
   ['Sergio Moto Sport', '#1F3A6E', '#111827'], ['Azul marino', '#1E3A8A', '#0B1B36'], ['Pizarra', '#334155', '#1E293B'],
@@ -11,7 +12,7 @@ const TEMAS = [
 export async function render(el, params) {
   const adm = esAdmin();
   const tab = params.t || (adm ? 'taller' : 'perfil');
-  const tabs = adm ? [['taller', 'Datos del taller'], ['apariencia', 'Logo y colores'], ['impuestos', 'Impuestos'], ['tarifas', 'Tarifas'], ['campos', 'Campos personalizados'], ['usuarios', 'Usuarios y permisos'], ['licencia', 'Licencia'], ['importar', 'Importar datos'], ['perfil', 'Mi perfil']] : [['perfil', 'Mi perfil']];
+  const tabs = adm ? [['taller', 'Datos del taller'], ['apariencia', 'Logo y colores'], ['impuestos', 'Impuestos'], ['tarifas', 'Tarifas'], ['campos', 'Campos personalizados'], ['usuarios', 'Usuarios'], ['roles', 'Roles y ventanas'], ['equipos', 'Equipo del taller'], ['licencia', 'Licencia'], ['importar', 'Importar datos'], ['perfil', 'Mi perfil']] : [['perfil', 'Mi perfil']];
   el.innerHTML = `<div class="head"><div class="t"><h1>Configuración</h1><div class="muted">${adm ? 'Solo el administrador puede cambiar estos ajustes' : 'Los ajustes del taller los gestiona el administrador'}</div></div></div>
   <nav class="tabs">${tabs.map(([k, t]) => `<a href="#/config?t=${k}" class="${k === tab ? 'on' : ''}">${t}</a>`).join('')}</nav><div data-tab></div>`;
   const T = el.querySelector('[data-tab]');
@@ -21,7 +22,7 @@ export async function render(el, params) {
   if (tab === 'perfil') {
     const p = state.perfil;
     T.innerHTML = `<section class="card" style="max-width:640px"><h2>${esc(p.nombre)}</h2>
-      <p style="margin:0">Usuario: <b>${esc(p.usuario)}</b> · Rol: <b>${esc({ admin: 'Administrador', recepcion: 'Recepción', comercial: 'Comercial', mecanico: 'Mecánico' }[p.rol])}</b></p>
+      <p style="margin:0">Usuario: <b>${esc(p.usuario)}</b> · Rol: <b>${esc(nombreRol(p.rol))}</b></p>
       <h3>Correo para recuperar la contraseña</h3>
       <div class="form"><div class="field full"><label for="micorreo">Mi correo</label><input id="micorreo" type="email" autocomplete="email" maxlength="120" placeholder="nombre@correo.com"></div></div>
       <p class="muted small" style="margin:0">Si olvidas la contraseña, te llegará aquí un enlace para poner una nueva. Solo lo ves tú y el administrador.</p>
@@ -165,6 +166,68 @@ export async function render(el, params) {
 
   if (tab === 'importar') { importar.render(T); return; }
 
+  if (tab === 'equipos') {
+    const E = ok(await sb.from('equipos').select('*').eq('activo', true).order('alta'));
+    const est = Object.fromEntries((await estadoSync(true)).map((x) => [x.id, x]));
+    const aqui = equipoLocal();
+    const esteRegistrado = E.some((x) => x.id === aqui);
+    const estado = (x) => {
+      if (x.id === aqui) return '<span class="chip info">Este ordenador</span>';
+      if (est[x.id]?.aviso) return '<span class="chip warn">Sin señal: los demás ven el aviso</span>';
+      if (x.cerrado) return '<span class="chip">Cerrado</span>';
+      return '<span class="chip ok">Conectado</span>';
+    };
+    T.innerHTML = `<section class="card" style="max-width:900px"><h2>Equipo del taller</h2>
+      <p style="margin:0">Marca aquí el ordenador del taller. Mientras tenga el programa abierto, avisa a la nube cada minuto de que está conectado.
+      Si deja de avisar (por ejemplo, porque se ha ido internet en el taller), quien agenda desde el móvil o desde fuera ve un aviso amarillo:
+      puede haber citas hechas en el taller que aún no han subido. Si todo va bien, no se ve ningún aviso.</p>
+      <p class="muted small" style="margin:0">Si el programa se cierra de forma normal (cerrar sesión o cerrar la ventana), no sale el aviso. Si el ordenador se apaga de golpe, sí: puedes quitarlo aquí.</p>
+      ${E.length ? `<div class="tablewrap"><table><thead><tr><th>Equipo</th><th>Estado</th><th>Última señal</th><th>Usuario</th><th></th></tr></thead><tbody>${E.map((x) => `<tr>
+        <td><b>${esc(x.nombre)}</b><div class="muted small">dado de alta el ${esc(fdate(x.alta))}</div></td>
+        <td>${estado(x)}</td><td>${x.ultimo_latido ? esc(fdt(x.ultimo_latido)) : '<span class="muted small">Nunca</span>'}</td>
+        <td>${esc(x.ultimo_usuario ? (state.perfiles.find((p) => p.id === x.ultimo_usuario)?.nombre || '') : '')}</td>
+        <td class="right" style="white-space:nowrap">${est[x.id]?.aviso ? `<button type="button" class="btn sm" data-quitar="${attr(x.id)}">Quitar aviso</button> ` : ''}<button type="button" class="btn sm danger" data-retirar="${attr(x.id)}">Retirar</button></td></tr>`).join('')}</tbody></table></div>`
+        : '<p class="muted" style="margin:0">Todavía no hay ningún equipo del taller.</p>'}
+      ${esteRegistrado ? '<p style="margin:0"><b>Este ordenador es el equipo del taller.</b></p>'
+        : '<button type="button" class="btn pri" data-alta style="align-self:flex-start">Usar este ordenador como equipo del taller</button>'}
+      <h3>Cuándo avisar</h3>
+      <div class="form"><div class="field"><label for="sync-min">Avisar tras estos minutos sin señal</label><input id="sync-min" type="number" min="1" max="120" step="1" value="${attr(cfg.sync_aviso_min ?? 3)}"></div></div>
+      <button type="button" class="btn" data-min style="align-self:flex-start">Guardar</button></section>`;
+    T.querySelector('[data-alta]')?.addEventListener('click', () => {
+      modal('Equipo del taller', `<div class="form">${field('Nombre del equipo', 'nombre', 'Ordenador del taller', 'text', 'maxlength="60" required')}</div>
+        <p class="muted small" style="margin:0">Hazlo en el ordenador que se queda en el taller. Se guarda en este navegador: si usas otro navegador en el mismo ordenador, hay que volver a darlo de alta.</p>`, {
+        okText: 'Dar de alta',
+        onOk: async (root) => {
+          const nombre = formData(root).nombre;
+          if (!nombre) throw new Error('Pon un nombre');
+          const x = ok(await sb.from('equipos').insert({ nombre, cerrado: false, ultimo_latido: new Date().toISOString() }).select('id').single());
+          marcarEquipoLocal(x.id); iniciarLatido();
+          toast('Este ordenador ya es el equipo del taller'); recargar();
+        },
+      });
+    });
+    T.querySelectorAll('[data-quitar]').forEach((b) => b.addEventListener('click', async () => {
+      try { ok(await sb.from('equipos').update({ cerrado: true }).eq('id', b.dataset.quitar)); toast('Aviso quitado'); recargar(); } catch (e) { fail(e); }
+    }));
+    T.querySelectorAll('[data-retirar]').forEach((b) => b.addEventListener('click', () => {
+      const x = E.find((y) => y.id === b.dataset.retirar);
+      modal('Retirar equipo', `<p style="margin:0">¿Retirar <b>${esc(x.nombre)}</b>? Deja de ser el equipo del taller y no volverá a salir el aviso por él.</p>`, {
+        okText: 'Retirar',
+        onOk: async () => {
+          if (x.id === aqui) { await avisarCierre(); pararLatido(); marcarEquipoLocal(null); }
+          ok(await sb.from('equipos').update({ activo: false, cerrado: true }).eq('id', x.id));
+          toast('Equipo retirado'); recargar();
+        },
+      });
+    }));
+    T.querySelector('[data-min]').addEventListener('click', async () => {
+      const n = Math.round(Number(T.querySelector('#sync-min').value));
+      if (!(n >= 1 && n <= 120)) return toast('Pon entre 1 y 120 minutos', true);
+      try { ok(await sb.from('config').update({ sync_aviso_min: n }).eq('id', 1)); toast('Guardado'); recargar(); } catch (e) { fail(e); }
+    });
+    return;
+  }
+
   if (tab === 'licencia') {
     const l = state.licencia || {};
     const e = licEstado();
@@ -205,6 +268,51 @@ export async function render(el, params) {
     return;
   }
 
+  if (tab === 'roles') {
+    const R = ok(await sb.from('roles').select('*').order('nombre'));
+    const P = ok(await sb.from('perfiles').select('id, rol'));
+    const usan = (c) => P.filter((p) => p.rol === c).length;
+    const vent = (r) => (r.nivel === 'admin' ? '<span class="chip ok">Todas</span>' : VENTANAS.filter(([k]) => r.ventanas.includes(k)).map(([, t]) => `<span class="chip">${esc(t)}</span>`).join(' ') || '<span class="muted small">Solo el panel</span>');
+    T.innerHTML = `<section class="card"><div class="head" style="margin:0"><div class="t"><h2 style="margin:0">Roles y ventanas</h2></div><div class="actions"><button type="button" class="btn pri" data-nuevo>Nuevo rol</button></div></div>
+      <p class="muted small" style="margin:0">Cada rol decide qué ventanas del menú ve su gente. El panel y "Mi perfil" los ven todos. El Administrador lo ve todo siempre y no se puede cambiar, para que nadie se quede fuera. La base de datos también lo comprueba: sin la ventana Facturación no se pueden leer ni hacer facturas aunque se intente por otro camino.</p>
+      <div class="tablewrap"><table><thead><tr><th>Rol</th><th>Ventanas</th><th>Permisos</th><th>En la agenda</th><th class="right">Usuarios</th><th></th></tr></thead>
+      <tbody>${R.map((r) => `<tr><td><b>${esc(r.nombre)}</b>${r.sistema ? ' <span class="muted small">de serie</span>' : ''}</td><td>${vent(r)}</td><td class="small">${esc(NIVELES[r.nivel] || r.nivel)}</td><td>${r.tecnico ? 'Sí' : 'No'}</td><td class="right num">${usan(r.clave)}</td>
+        <td class="right" style="white-space:nowrap">${r.nivel === 'admin' ? '' : `<button type="button" class="btn sm" data-e="${attr(r.clave)}">Editar</button>`}${r.sistema || usan(r.clave) ? '' : ` <button type="button" class="btn sm" data-b="${attr(r.clave)}">Borrar</button>`}</td></tr>`).join('')}</tbody></table></div></section>`;
+    const editar = (r) => {
+      const nuevo = !r; r = r || { nombre: '', nivel: 'taller', ventanas: ['agenda', 'rep'], tecnico: true };
+      const m = modal(nuevo ? 'Nuevo rol' : `Rol ${r.nombre}`, `<div class="form">${field('Nombre del rol', 'nombre', r.nombre, 'text', 'maxlength="40" required')}
+        <div class="field"><label for="f-nivel">Permisos</label><select id="f-nivel" name="nivel">${['oficina', 'taller'].map((k) => opt(k, NIVELES[k], r.nivel)).join('')}</select></div>
+        <fieldset class="full" style="border:1px solid var(--line, #e5e7eb);border-radius:10px;padding:10px 12px;margin:0"><legend class="small" style="padding:0 6px">Ventanas que ve</legend>
+          <div style="display:flex;flex-wrap:wrap;gap:6px 18px">${VENTANAS.map(([k, t]) => `<label class="check"><input type="checkbox" name="v_${k}" ${r.ventanas.includes(k) ? 'checked' : ''}> ${esc(t)}</label>`).join('')}</div>
+          <p class="muted small" data-avisofact style="margin:6px 0 0">Facturación solo se puede dar con permisos de Oficina, y solo se ve en ordenador.</p></fieldset>
+        <label class="check full"><input type="checkbox" name="tecnico" ${r.tecnico ? 'checked' : ''}> Sale en la lista de mecánicos para asignar citas y horas</label></div>`, {
+        onOk: async (root) => {
+          const o = formData(root);
+          if (!o.nombre || o.nombre.length < 2) throw new Error('Escribe el nombre del rol');
+          const fila = { nombre: o.nombre, nivel: o.nivel === 'oficina' ? 'oficina' : 'taller', ventanas: VENTANAS.map(([k]) => k).filter((k) => o['v_' + k]), tecnico: !!o.tecnico };
+          if (nuevo) {
+            const base = o.nombre.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 24) || 'rol';
+            let clave = base.length < 2 ? 'rol_' + base : base; let n = 2;
+            while (R.some((x) => x.clave === clave)) clave = `${base.slice(0, 24)}_${n++}`;
+            ok(await sb.from('roles').insert({ clave, ...fila }));
+          } else ok(await sb.from('roles').update(fila).eq('clave', r.clave));
+          toast('Rol guardado'); recargar();
+        },
+      });
+      const niv = m.querySelector('[name=nivel]'); const fac = m.querySelector('[name=v_fact]');
+      const sync = () => { const t = niv.value === 'taller'; fac.disabled = t; if (t) fac.checked = false; };
+      niv.addEventListener('change', sync); sync();
+    };
+    T.querySelector('[data-nuevo]').addEventListener('click', () => editar(null));
+    T.querySelectorAll('[data-e]').forEach((b) => b.addEventListener('click', () => editar(R.find((x) => x.clave === b.dataset.e))));
+    T.querySelectorAll('[data-b]').forEach((b) => b.addEventListener('click', async () => {
+      const r = R.find((x) => x.clave === b.dataset.b);
+      if (!(await confirmar(`¿Borrar el rol ${r.nombre}?`, 'Borrar'))) return;
+      try { ok(await sb.from('roles').delete().eq('clave', r.clave)); toast('Rol borrado'); recargar(); } catch (e) { fail(e); }
+    }));
+    return;
+  }
+
   if (tab === 'usuarios') {
     const P = ok(await sb.from('perfiles').select('*').order('nombre'));
     const correos = Object.fromEntries(ok(await sb.from('usuarios_correo').select('user_id, correo')).map((c) => [c.user_id, c.correo]));
@@ -215,12 +323,17 @@ export async function render(el, params) {
       return `<span class="chip ok">${esc(x.dispositivo || 'Conectado')}</span><div class="muted small">desde ${esc(fdt(x.desde))}</div>`
         + (p.id === state.perfil.id ? '' : `<button type="button" class="btn sm" data-cerrar="${attr(p.id)}" style="margin-top:4px">Cerrar sesión</button>`);
     };
-    const rolT = { admin: 'Administrador', recepcion: 'Recepción', comercial: 'Comercial', mecanico: 'Mecánico' };
+    const dispTxt = (p) => {
+      const si = DISPOSITIVOS.filter(([k]) => p[k] !== false);
+      if (si.length === DISPOSITIVOS.length) return '<span class="muted small">Todos</span>';
+      if (!si.length) return '<span class="chip bad">Ninguno</span>';
+      return si.map(([, t]) => `<span class="chip">${esc(t)}</span>`).join(' ');
+    };
     T.innerHTML = `<section class="card"><h2>Usuarios del taller</h2>
       <p class="muted small" style="margin:0">Cada usuario solo puede estar abierto en un dispositivo a la vez. Si un equipo se queda con la sesión abierta, puedes cerrarla aquí (o se libera sola tras 10 minutos sin uso).</p>
-      <p class="muted small" style="margin:0">Cada persona entra con su usuario y contraseña. Administrador: todo. Recepción y Comercial: agenda, clientes, almacén y facturación (no ven datos bancarios ni configuración). Mecánico: agenda, reparaciones, horas y consulta de almacén (no ve facturación).</p>
-      <div class="tablewrap"><table><thead><tr><th>Nombre</th><th>Usuario</th><th>Correo</th><th>Rol</th><th class="right">€/hora</th><th>Color</th><th>Estado</th><th>Conectado</th><th></th></tr></thead>
-      <tbody>${P.map((p) => `<tr><td><b>${esc(p.nombre)}</b></td><td>${esc(p.usuario)}</td><td>${correos[p.id] ? esc(correos[p.id]) : '<span class="muted small">Sin correo</span>'}</td><td>${esc(rolT[p.rol])}</td><td class="right num">${money(p.precio_hora)}</td><td><span style="display:inline-block;width:18px;height:18px;border-radius:50%;background:${attr(hex(p.color, '#1F3A6E'))}"></span></td><td>${p.activo ? '<span class="chip ok">Activo</span>' : '<span class="chip bad">Sin acceso</span>'}</td><td>${conectado(p)}</td><td class="right"><button type="button" class="btn sm" data-e="${p.id}">Editar</button></td></tr>`).join('')}</tbody></table></div></section>`;
+      <p class="muted small" style="margin:0">Cada persona entra con su usuario y contraseña. Lo que ve cada uno lo decide su rol (pestaña <a href="#/config?t=roles">Roles y ventanas</a>). En "Dispositivos" eliges desde qué equipos puede entrar: si le quitas uno mientras está conectado desde él, se queda fuera al momento.</p>
+      <div class="tablewrap"><table><thead><tr><th>Nombre</th><th>Usuario</th><th>Correo</th><th>Rol</th><th>Dispositivos</th><th class="right">€/hora</th><th>Color</th><th>Estado</th><th>Conectado</th><th></th></tr></thead>
+      <tbody>${P.map((p) => `<tr><td><b>${esc(p.nombre)}</b></td><td>${esc(p.usuario)}</td><td>${correos[p.id] ? esc(correos[p.id]) : '<span class="muted small">Sin correo</span>'}</td><td>${esc(nombreRol(p.rol))}</td><td>${dispTxt(p)}</td><td class="right num">${money(p.precio_hora)}</td><td><span style="display:inline-block;width:18px;height:18px;border-radius:50%;background:${attr(hex(p.color, '#1F3A6E'))}"></span></td><td>${p.activo ? '<span class="chip ok">Activo</span>' : '<span class="chip bad">Sin acceso</span>'}</td><td>${conectado(p)}</td><td class="right"><button type="button" class="btn sm" data-e="${p.id}">Editar</button></td></tr>`).join('')}</tbody></table></div></section>`;
     T.querySelectorAll('[data-cerrar]').forEach((b) => b.addEventListener('click', () => {
       const p = P.find((x) => x.id === b.dataset.cerrar);
       modal('Cerrar sesión', `<p style="margin:0">¿Cerrar la sesión de <b>${esc(p.nombre)}</b> en <b>${esc(ses[p.id]?.dispositivo || 'su dispositivo')}</b>? Si está trabajando en ese momento, perderá lo que no haya guardado.</p>`, {
@@ -231,15 +344,23 @@ export async function render(el, params) {
     T.querySelectorAll('[data-e]').forEach((b) => b.addEventListener('click', () => {
       const p = P.find((x) => x.id === b.dataset.e); const yo = p.id === state.perfil.id;
       modal(`Editar ${p.nombre}`, `<div class="form">${field('Nombre', 'nombre', p.nombre, 'text', 'maxlength="80"')}
-        <div class="field"><label for="f-rol">Rol</label><select id="f-rol" name="rol" ${yo ? 'disabled' : ''}>${Object.entries(rolT).map(([k, t]) => opt(k, t, p.rol)).join('')}</select></div>
+        <div class="field"><label for="f-rol">Rol</label><select id="f-rol" name="rol" ${yo ? 'disabled' : ''}>${state.roles.map((r) => opt(r.clave, r.nombre, p.rol)).join('')}</select></div>
         ${field('Correo (para recuperar la contraseña)', 'correo', correos[p.id] || '', 'email', 'maxlength="120" autocomplete="off"')}
         ${field('Precio por hora (€)', 'precio_hora', p.precio_hora, 'number', 'min="0" step="0.5"')}
         <div class="field"><label for="f-color">Color en la agenda</label><input id="f-color" type="color" name="color" value="${attr(hex(p.color, '#1F3A6E'))}" style="padding:4px"></div>
-        <label class="check full"><input type="checkbox" name="activo" ${p.activo ? 'checked' : ''} ${yo ? 'disabled' : ''}> Puede entrar en la aplicación</label></div>`, {
+        <label class="check full"><input type="checkbox" name="activo" ${p.activo ? 'checked' : ''} ${yo ? 'disabled' : ''}> Puede entrar en la aplicación</label>
+        <fieldset class="full" style="border:1px solid var(--line, #e5e7eb);border-radius:10px;padding:10px 12px;margin:0"><legend class="small" style="padding:0 6px">Puede entrar desde</legend>
+          <div style="display:flex;flex-wrap:wrap;gap:6px 18px">${DISPOSITIVOS.map(([k, t]) => `<label class="check"><input type="checkbox" name="${k}" ${p[k] !== false ? 'checked' : ''} ${yo ? 'disabled' : ''}> ${esc(t)}</label>`).join('')}</div>
+          ${yo ? '<p class="muted small" style="margin:6px 0 0">Tu propio rol, acceso y dispositivos los cambia otro administrador (así nadie se queda fuera por error).</p>' : ''}
+        </fieldset></div>`, {
         onOk: async (root) => {
           const o = formData(root);
           const upd = { nombre: o.nombre || p.nombre, precio_hora: Number(o.precio_hora) || 0, color: hex(o.color, '#1F3A6E') };
-          if (!yo) { upd.rol = o.rol; upd.activo = o.activo; }
+          if (!yo) {
+            upd.rol = o.rol; upd.activo = o.activo;
+            DISPOSITIVOS.forEach(([k]) => { upd[k] = !!o[k]; });
+            if (upd.activo && !DISPOSITIVOS.some(([k]) => upd[k])) throw new Error('Marca al menos un dispositivo, o quita "Puede entrar en la aplicación"');
+          }
           ok(await sb.from('perfiles').update(upd).eq('id', p.id));
           if ((o.correo || '') !== (correos[p.id] || '')) await guardarCorreo(p.id, o.correo);
           toast('Usuario guardado'); recargar();
