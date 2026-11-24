@@ -194,14 +194,30 @@ export async function renderFicha(el, params) {
   el.innerHTML = `
   <div class="head"><div class="t"><h1>${esc(p.nombre)}</h1>
     <div class="muted" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><span class="chip">${esc(p.referencia)}</span>${p.marca ? `<span>${esc(p.marca)}</span>` : ''}${p.categoria ? `<span class="chip info">${esc(p.categoria)}</span>` : ''}<span class="chip ${bajo ? 'bad' : 'ok'}">Stock ${p.stock}</span>${of && mg ? `<span class="chip ${mg.pct < 0 ? 'bad' : mg.pct < 15 ? 'warn' : 'ok'}">Margen ${mg.pct.toFixed(0)} % · ${money(mg.eur)}</span>` : ''}</div></div>
-    <div class="actions">${botonVolver(volver)}${of ? `<a class="btn" href="#/almacen?t=compras&p=${id}">Registrar compra</a><button type="button" class="btn pri" data-ed>Editar pieza</button>` : ''}</div></div>
+    <div class="actions">${botonVolver(volver)}${of ? `<a class="btn" href="#/almacen?t=compras&p=${id}">Registrar compra</a>` : ''}</div></div>
   <nav class="tabs">${tabs.map(([k, t]) => `<a href="#/pieza/${id}?t=${k}" class="${k === tab ? 'on' : ''}">${esc(t)}</a>`).join('')}</nav>
   <div data-tab><p class="muted">Cargando…</p></div>`;
   const T = el.querySelector('[data-tab]');
   const recargar = () => renderFicha(el, params);
-  el.querySelector('[data-ed]')?.addEventListener('click', () => editarPieza(p, provs, recargar, () => { location.hash = '#/almacen'; }));
 
-  if (tab === 'datos') {
+  if (tab === 'datos' && of) {
+    // La oficina edita la pieza aquí mismo, sin ventana: cambiar y Guardar
+    T.innerHTML = `<section class="card ficha-compacta ficha-pieza" data-f>${formPieza(p, provs)}
+      <div class="actions"><button type="button" class="btn pri" data-g disabled>Guardar cambios</button>${esAdmin() ? '<button type="button" class="btn danger" data-del>Eliminar pieza</button>' : ''}<span class="muted small" data-estado>Sin cambios</span></div></section>`;
+    const F = T.querySelector('[data-f]'), G = F.querySelector('[data-g]'), est = F.querySelector('[data-estado]');
+    enlazarMargen(F);
+    const marcar = () => { G.disabled = false; est.textContent = 'Hay cambios sin guardar'; };
+    F.querySelectorAll('input,select').forEach((x) => x.addEventListener('input', marcar));
+    const guardar = async () => {
+      if (G.disabled) return;
+      G.disabled = true; est.textContent = 'Guardando…';
+      try { await guardarPieza(F, p); toast('Pieza guardada'); recargar(); } catch (e) { fail(e); G.disabled = false; est.textContent = 'Hay cambios sin guardar'; }
+    };
+    G.addEventListener('click', guardar);
+    F.querySelectorAll('input').forEach((x) => x.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); guardar(); } }));
+    F.querySelector('[data-del]')?.addEventListener('click', () => borrarPieza(p, () => { location.hash = '#/almacen'; }));
+  }
+  if (tab === 'datos' && !of) {
     const fila = (l, v) => `<div class="field"><span class="lbl">${esc(l)}</span><b style="padding:6px 0">${v}</b></div>`;
     T.innerHTML = `<section class="card"><div class="form">
       ${fila('Referencia', esc(p.referencia))}${fila('Nombre', esc(p.nombre))}${fila('Marca', esc(p.marca || '—'))}${fila('Categoría', esc(p.categoria || '—'))}
@@ -214,44 +230,51 @@ export async function renderFicha(el, params) {
   if (tab === 'movimientos') tablaMovimientos(T, ok(await sb.from('movimientos_stock').select(SEL_MOV).eq('pieza_id', id).order('fecha', { ascending: false }).limit(500)));
 }
 
-function editarPieza(p, provs, recargar, trasBorrar) {
-  p = p || {};
-  const m = modal(p.id ? 'Editar pieza' : 'Nueva pieza', `<div class="form">
+// Formulario de la pieza: el mismo en la ficha (se edita ahí mismo) y en "Nueva pieza"
+function formPieza(p, provs) {
+  return `<div class="form">
     ${field('Referencia *', 'referencia', p.referencia, 'text', 'maxlength="40" required')}
     ${field('Nombre *', 'nombre', p.nombre, 'text', 'maxlength="120" required')}
     ${field('Código de barras', 'codigo_barras', p.codigo_barras, 'text', 'maxlength="40" autocomplete="off" placeholder="Pasa el lector o escríbelo"')}
     ${field('Marca', 'marca', p.marca, 'text', 'maxlength="40"')}
     ${field('Categoría', 'categoria', p.categoria, 'text', 'maxlength="40" list="cats"')}
-    ${field('PVP (€) *', 'pvp', p.pvp, 'number', 'min="0" step="0.01" required')}
-    ${field('Precio de compra (€) *', 'precio_compra', p.precio_compra, 'number', 'min="0" step="0.01" required')}
+    ${field('PVP (€) *', 'pvp', p.pvp, 'number', 'min="0" step="0.01" required inputmode="decimal"')}
+    ${field('Precio de compra (€) *', 'precio_compra', p.precio_compra, 'number', 'min="0" step="0.01" required inputmode="decimal"')}
+    <div class="field"><span class="lbl">Margen</span><b style="padding:10px 0" data-mg>—</b></div>
     ${field('Fecha de compra', 'fecha_compra', p.fecha_compra, 'date')}
     <div class="field"><label for="f-prov">Proveedor</label><select id="f-prov" name="proveedor_id">${opt('', '—', p.proveedor_id ?? '')}${provs.map((v) => opt(v.id, v.nombre, p.proveedor_id)).join('')}</select></div>
-    ${p.id ? `<div class="field"><span class="lbl">Stock actual</span><b style="padding:10px 0">${p.stock}</b></div>` : field('Stock inicial', 'stock', 0, 'number', 'min="0"')}
+    ${p.id ? `<div class="field"><span class="lbl">Stock actual</span><b style="padding:10px 0;color:${p.stock <= p.stock_minimo ? 'var(--bad)' : 'inherit'}">${p.stock}</b></div>` : field('Stock inicial', 'stock', 0, 'number', 'min="0"')}
     ${field('Stock mínimo', 'stock_minimo', p.stock_minimo ?? 1, 'number', 'min="0"')}
     ${field('Ubicación', 'ubicacion', p.ubicacion, 'text', 'maxlength="40" placeholder="Ej.: Estantería A-3"')}
     <datalist id="cats">${['Frenos', 'Transmisión', 'Motor', 'Filtros', 'Aceites', 'Neumáticos', 'Electricidad', 'Suspensión', 'Carrocería', 'Competición'].map((c) => `<option value="${c}">`).join('')}</datalist>
-    <p class="muted small full" style="margin:0" data-mg></p>
-  </div>${p.id && esAdmin() ? '<button type="button" class="btn danger sm" data-del style="align-self:flex-start">Eliminar pieza</button>' : ''}`, {
-    onOk: async (root) => {
-      const o = formData(root);
-      req(o, [['referencia', 'referencia'], ['nombre', 'nombre'], ['pvp', 'PVP'], ['precio_compra', 'precio de compra']]);
-      const d = { referencia: o.referencia.toUpperCase(), codigo_barras: o.codigo_barras || null, nombre: o.nombre, marca: o.marca, categoria: o.categoria, pvp: Number(o.pvp), precio_compra: Number(o.precio_compra), fecha_compra: o.fecha_compra, proveedor_id: o.proveedor_id ? Number(o.proveedor_id) : null, stock_minimo: Number(o.stock_minimo) || 0, ubicacion: o.ubicacion };
-      if (d.pvp < 0 || d.precio_compra < 0) throw new Error('Los precios no pueden ser negativos');
-      const dup = (e) => { if (/duplicate|unique/i.test(e.message)) throw new Error(/codigo_barras/.test(e.message) ? 'Ese código de barras ya lo tiene otra pieza' : 'Esa referencia ya existe en el almacén'); throw e; };
-      if (p.id) { try { ok(await sb.from('piezas').update(d).eq('id', p.id)); } catch (e) { dup(e); } }
-      else {
-        const stock = Math.max(0, Math.floor(Number(o.stock) || 0));
-        let n; try { n = ok(await sb.from('piezas').insert({ ...d, stock: 0 }).select('id').single()); } catch (e) { dup(e); }
-        if (stock > 0) ok(await sb.rpc('registrar_compra', { p_pieza: n.id, p_cantidad: stock, p_precio: d.precio_compra, p_proveedor: d.proveedor_id, p_fecha: d.fecha_compra || today(), p_nota: 'Stock inicial' }));
-      }
-      toast('Pieza guardada'); recargar();
-    },
+  </div>`;
+}
+// Margen al momento mientras se cambian los precios
+function enlazarMargen(root) {
+  const pinta = () => { const v = margen({ pvp: Number(root.querySelector('[name=pvp]').value), precio_compra: Number(root.querySelector('[name=precio_compra]').value) }); const b = root.querySelector('[data-mg]'); b.textContent = v ? `${v.pct.toFixed(0)} % · ${money(v.eur)} por unidad` : '—'; b.style.color = !v ? '' : v.pct < 0 ? 'var(--bad)' : v.pct < 15 ? '#8A5A00' : 'var(--ok)'; };
+  root.querySelectorAll('[name=pvp],[name=precio_compra]').forEach((x) => x.addEventListener('input', pinta)); pinta();
+}
+async function guardarPieza(root, p) {
+  const o = formData(root);
+  req(o, [['referencia', 'referencia'], ['nombre', 'nombre'], ['pvp', 'PVP'], ['precio_compra', 'precio de compra']]);
+  const d = { referencia: o.referencia.toUpperCase(), codigo_barras: o.codigo_barras || null, nombre: o.nombre, marca: o.marca, categoria: o.categoria, pvp: Number(o.pvp), precio_compra: Number(o.precio_compra), fecha_compra: o.fecha_compra, proveedor_id: o.proveedor_id ? Number(o.proveedor_id) : null, stock_minimo: Math.max(0, Math.floor(Number(o.stock_minimo) || 0)), ubicacion: o.ubicacion };
+  if (d.pvp < 0 || d.precio_compra < 0) throw new Error('Los precios no pueden ser negativos');
+  const dup = (e) => { if (/duplicate|unique/i.test(e.message)) throw new Error(/codigo_barras/.test(e.message) ? 'Ese código de barras ya lo tiene otra pieza' : 'Esa referencia ya existe en el almacén'); throw e; };
+  if (p.id) { try { ok(await sb.from('piezas').update(d).eq('id', p.id)); } catch (e) { dup(e); } return p.id; }
+  const stock = Math.max(0, Math.floor(Number(o.stock) || 0));
+  let n; try { n = ok(await sb.from('piezas').insert({ ...d, stock: 0 }).select('id').single()); } catch (e) { dup(e); }
+  if (stock > 0) ok(await sb.rpc('registrar_compra', { p_pieza: n.id, p_cantidad: stock, p_precio: d.precio_compra, p_proveedor: d.proveedor_id, p_fecha: d.fecha_compra || today(), p_nota: 'Stock inicial' }));
+  return n.id;
+}
+async function borrarPieza(p, despues) {
+  if (!(await confirmar('¿Eliminar esta pieza del almacén?', 'Eliminar'))) return;
+  try { ok(await sb.from('piezas').delete().eq('id', p.id)); toast('Pieza eliminada'); despues(); } catch (e) { fail(/foreign/.test(e.message) ? new Error('Se ha usado en reparaciones: no se puede eliminar') : e); }
+}
+
+// Nueva pieza (ventana). Al guardar se abre su ficha, donde ya se edita directamente.
+function editarPieza(p, provs, recargar) {
+  const m = modal('Nueva pieza', formPieza({}, provs), {
+    onOk: async (root) => { const id = await guardarPieza(root, {}); toast('Pieza guardada'); location.hash = `#/pieza/${id}`; },
   });
-  // Margen al momento mientras se cambian los precios
-  const pintaMg = () => { const v = margen({ pvp: Number(m.querySelector('[name=pvp]').value), precio_compra: Number(m.querySelector('[name=precio_compra]').value) }); m.querySelector('[data-mg]').textContent = v ? `Margen: ${v.pct.toFixed(0)} % (${money(v.eur)} por unidad)` : ''; };
-  m.querySelectorAll('[name=pvp],[name=precio_compra]').forEach((x) => x.addEventListener('input', pintaMg)); pintaMg();
-  m.querySelector('[data-del]')?.addEventListener('click', async () => {
-    if (!(await confirmar('¿Eliminar esta pieza del almacén?', 'Eliminar'))) return;
-    try { ok(await sb.from('piezas').delete().eq('id', p.id)); m.remove(); toast('Pieza eliminada'); (trasBorrar || recargar)(); } catch (e) { fail(/foreign/.test(e.message) ? new Error('Se ha usado en reparaciones: no se puede eliminar') : e); }
-  });
+  enlazarMargen(m);
 }
