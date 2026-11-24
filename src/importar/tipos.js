@@ -334,6 +334,7 @@ const articulos = {
     { k: 'nombre', l: 'Nombre / descripción', req: true, syn: ['nombre', 'descripcion', 'denominacion', 'name', 'producto', 'descripcion articulo', 'nombre articulo', 'concepto'] },
     { k: 'categoria', l: 'Categoría / familia', syn: ['categoria', 'familia', 'grupo', 'category', 'subfamilia', 'seccion', 'categories'] },
     { k: 'marca', l: 'Marca', syn: ['marca', 'fabricante', 'manufacturer', 'brand'] },
+    { k: 'codigo_barras', l: 'Código de barras (EAN)', syn: ['codigo barras', 'codigo de barras', 'ean', 'ean13', 'ean 13', 'barcode', 'upc', 'cod barras'] },
     { k: 'pvp', l: 'PVP sin impuesto (€)', syn: ['pvp', 'precio venta', 'precio', 'p v p', 'precio sin iva', 'price', 'price tax excluded', 'tarifa', 'precio venta publico', 'pvp sin iva', 'pvp sin igic'] },
     { k: 'pvp_con', l: 'PVP con impuesto incluido (€)', syn: ['pvp iva incluido', 'precio con iva', 'pvp con iva', 'price tax included', 'pvp con igic', 'precio con igic', 'pvp iva', 'precio final'], ayuda: 'Si solo tienes el precio con IGIC/IVA, se le quita el impuesto por defecto' },
     { k: 'precio_compra', l: 'Precio de compra (€)', syn: ['precio compra', 'coste', 'precio coste', 'p compra', 'costo', 'ultimo coste', 'wholesale price', 'precio de coste', 'pmc', 'precio medio coste'] },
@@ -370,8 +371,10 @@ const articulos = {
       const fc = aFecha(g(f, 'fecha_compra')); if (Number.isNaN(fc)) it.avisos.push('Fecha de compra no válida');
       const provTxt = txt(g(f, 'proveedor'), 120); const prov = provTxt ? ctx.proveedor(provTxt) : null;
       if (provTxt && !prov) it.avisos.push(`Proveedor "${provTxt}" no encontrado`);
+      let cb = txt(g(f, 'codigo_barras'), 40);
+      if (cb && (ctx.cbVistos ||= new Set()).has(cb)) { it.avisos.push(`Código de barras ${cb} repetido en el archivo: no se pone`); cb = null; } else if (cb) ctx.cbVistos.add(cb);
       it.datos = {
-        referencia: ref, nombre, categoria: txt(g(f, 'categoria'), 40), marca: txt(g(f, 'marca'), 40), ubicacion: txt(g(f, 'ubicacion'), 40),
+        referencia: ref, nombre, codigo_barras: cb, categoria: txt(g(f, 'categoria'), 40), marca: txt(g(f, 'marca'), 40), ubicacion: txt(g(f, 'ubicacion'), 40),
         pvp, precio_compra: precio('precio_compra', 'Precio de compra'), fecha_compra: Number.isNaN(fc) ? null : fc,
         proveedor_id: prov?.id ?? null, stock_minimo: smin !== null && !Number.isNaN(smin) && smin >= 0 ? Math.round(smin) : null,
       };

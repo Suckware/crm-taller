@@ -336,3 +336,29 @@ tfoot td { font-weight: 700; border-bottom: 0; }
 }
 .reg-c { display: inline-block; margin-right: 10px; }
 .reg-c s { color: var(--muted); }
+
+/* Buscador de piezas (compras y salidas) */
+.buscador-pieza { display: flex; flex-direction: column; gap: 8px; }
+.buscador-pieza [data-bq] { min-height: 48px; font-size: 16px; }
+.buscador-pieza .list:not(:empty) { max-height: 340px; overflow-y: auto; border: 1px solid var(--line2); border-radius: 10px; padding: 0 12px; }
+.buscador-pieza .list > .pick { width: 100%; background: none; border: 0; border-top: 1px solid var(--line2); border-radius: 0; min-height: 48px; text-align: left; font: inherit; cursor: pointer; }
+.buscador-pieza .list > .pick:first-child { border-top: 0; }
+.buscador-pieza .list > .pick:hover { background: var(--accent-soft); }
+.pieza-elegida { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 12px 14px; border: 1px solid var(--line2); border-radius: 12px; background: var(--accent-soft); }
+.pieza-elegida .grow { flex: 1; min-width: 180px; display: flex; flex-direction: column; gap: 2px; }
+
+/* Ficha de cliente compacta en ordenador: se ve entera sin scroll */
+@media (min-width: 1101px) {
+  .aviso.fila { flex-direction: row; align-items: baseline; gap: 12px; padding: 8px 14px; }
+  .ficha-compacta { padding: 16px 18px; gap: 12px; }
+  .ficha-compacta .form { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px 12px; }
+  .ficha-compacta .field { gap: 3px; }
+  .ficha-compacta .field label, .ficha-compacta .lbl { font-size: 12px; }
+  .ficha-compacta .field input, .ficha-compacta .field select { min-height: 38px; padding: 6px 10px; }
+  .ficha-compacta .field textarea { min-height: 62px; height: 62px; }
+  .ficha-compacta .form .full { grid-column: span 3; }
+  .ficha-compacta .form > .field:first-child { grid-column: span 2; }
+  .ficha-compacta .form > .field:first-child .actions { gap: 18px; min-height: 38px; align-items: center; }
+  .ficha-compacta .form > .full:has(> .lbl:only-child) { grid-column: 1 / -1; }
+  .ficha-compacta > .actions { align-items: center; }
+}
