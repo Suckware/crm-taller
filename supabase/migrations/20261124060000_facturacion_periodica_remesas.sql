@@ -191,43 +191,47 @@ language sql stable set search_path = public as $$
 $$;
 
 -- ---------------------------------------------------------------------------
--- Facturación periódica: una factura por cliente y mes con todas sus órdenes
--- terminadas hasta la fecha de corte. Devuelve los ids de las facturas creadas.
+-- Facturación periódica: se factura exactamente lo que se ha marcado en pantalla
+-- (las órdenes de su periodo y, si se quiere, otras que aún no tocaban).
+-- Sale una factura por cliente y mes. Devuelve los ids de las facturas creadas.
 -- ---------------------------------------------------------------------------
-create or replace function public.facturar_periodo(p_hasta date, p_clientes bigint[], p_impuesto integer) returns bigint[]
+create or replace function public.facturar_albaranes(p_reparaciones bigint[], p_impuesto integer) returns bigint[]
 language plpgsql security definer set search_path = public as $$
 declare
-  imp impuestos%rowtype; g record; rep record; fid bigint; k integer; v_ids bigint[] := '{}';
+  imp impuestos%rowtype; r reparaciones%rowtype; g record; rep record; fid bigint; k integer; v_ids bigint[] := '{}'; v_sel bigint[];
 begin
   if not public.es_oficina() then raise exception 'No tienes permiso para facturar'; end if;
-  if p_hasta is null or p_hasta > public.hoy_taller() then raise exception 'La fecha de corte no puede ser posterior a hoy'; end if;
-  if coalesce(array_length(p_clientes, 1), 0) = 0 then raise exception 'Elige al menos un cliente'; end if;
-  if array_length(p_clientes, 1) > 500 then raise exception 'Demasiados clientes de una vez (máximo 500)'; end if;
+  select array_agg(distinct x) into v_sel from unnest(p_reparaciones) x where x is not null;
+  if coalesce(array_length(v_sel, 1), 0) = 0 then raise exception 'Marca al menos un albarán'; end if;
+  if array_length(v_sel, 1) > 2000 then raise exception 'Demasiados albaranes de una vez (máximo 2000)'; end if;
   select * into imp from impuestos where id = p_impuesto and activo;
   if not found then select * into imp from impuestos where por_defecto limit 1; end if;
   if imp.id is null then raise exception 'No hay impuesto configurado'; end if;
   perform 1 from config where id = 1 for update; -- una facturación a la vez: nada se factura dos veces
 
+  -- comprobar cada orden antes de emitir nada (o se hace todo o nada)
+  for r in select * from reparaciones where id = any (v_sel) loop
+    if r.estado not in ('lista', 'entregada') or r.fecha_fin is null then raise exception 'La orden % todavía no está terminada', r.numero; end if;
+    if public.reparacion_facturada(r.id) then raise exception 'La orden % ya está facturada', r.numero; end if;
+    if not exists (select 1 from reparacion_horas h where h.reparacion_id = r.id) and not exists (select 1 from reparacion_piezas p where p.reparacion_id = r.id) then
+      raise exception 'La orden % no tiene piezas ni horas', r.numero;
+    end if;
+  end loop;
+  if (select count(*) from reparaciones where id = any (v_sel)) <> array_length(v_sel, 1) then raise exception 'Alguna orden no existe'; end if;
+
   for g in
-    select r.cliente_id, date_trunc('month', public.dia_taller(r.fecha_fin))::date as mes,
-           min(public.dia_taller(r.fecha_fin)) as desde, max(public.dia_taller(r.fecha_fin)) as hasta
-    from reparaciones r
-    where r.cliente_id = any (p_clientes) and r.estado in ('lista', 'entregada') and r.fecha_fin is not null
-      and public.dia_taller(r.fecha_fin) <= p_hasta and not public.reparacion_facturada(r.id)
-      and (exists (select 1 from reparacion_horas h where h.reparacion_id = r.id) or exists (select 1 from reparacion_piezas p where p.reparacion_id = r.id))
-    group by 1, 2 order by 1, 2
+    select r2.cliente_id, date_trunc('month', public.dia_taller(r2.fecha_fin))::date as mes,
+           min(public.dia_taller(r2.fecha_fin)) as desde, max(public.dia_taller(r2.fecha_fin)) as hasta
+    from reparaciones r2 where r2.id = any (v_sel) group by 1, 2 order by 1, 2
   loop
     insert into facturas (numero, fecha, cliente_id, reparacion_id, impuesto_nombre, impuesto_pct, periodo_desde, periodo_hasta)
       values (public._siguiente_factura(), public.hoy_taller(), g.cliente_id, null, imp.nombre, imp.porcentaje, g.desde, g.hasta)
       returning id into fid;
     k := 0;
     for rep in
-      select r.id from reparaciones r
-      where r.cliente_id = g.cliente_id and r.estado in ('lista', 'entregada') and r.fecha_fin is not null
-        and date_trunc('month', public.dia_taller(r.fecha_fin))::date = g.mes and public.dia_taller(r.fecha_fin) <= p_hasta
-        and not public.reparacion_facturada(r.id)
-        and (exists (select 1 from reparacion_horas h where h.reparacion_id = r.id) or exists (select 1 from reparacion_piezas p where p.reparacion_id = r.id))
-      order by r.fecha_fin, r.id
+      select r2.id from reparaciones r2
+      where r2.id = any (v_sel) and r2.cliente_id = g.cliente_id and date_trunc('month', public.dia_taller(r2.fecha_fin))::date = g.mes
+      order by r2.fecha_fin, r2.id
     loop
       insert into factura_reparaciones (factura_id, reparacion_id) values (fid, rep.id);
       perform public._lineas_reparacion(fid, rep.id, k * 10);
@@ -238,7 +242,6 @@ begin
     perform public._cerrar_factura(fid);
     v_ids := v_ids || fid;
   end loop;
-  if coalesce(array_length(v_ids, 1), 0) = 0 then raise exception 'No hay albaranes con importe para facturar hasta esa fecha'; end if;
   return v_ids;
 end $$;
 
@@ -426,14 +429,14 @@ begin
 end $$;
 
 revoke all on function public.facturar_reparacion(bigint, integer) from public, anon;
-revoke all on function public.facturar_periodo(date, bigint[], integer) from public, anon;
+revoke all on function public.facturar_albaranes(bigint[], integer) from public, anon;
 revoke all on function public.rectificar_factura(bigint, text) from public, anon;
 revoke all on function public.por_facturar() from public, anon;
 revoke all on function public.crear_remesa(bigint[], date, text) from public, anon;
 revoke all on function public.remesa_cambiar_estado(bigint, text) from public, anon;
 revoke all on function public.devolver_recibo(bigint, text) from public, anon;
 revoke all on function public.reparacion_facturada(bigint) from public, anon;
-grant execute on function public.facturar_reparacion(bigint, integer), public.facturar_periodo(date, bigint[], integer),
+grant execute on function public.facturar_reparacion(bigint, integer), public.facturar_albaranes(bigint[], integer),
   public.rectificar_factura(bigint, text), public.por_facturar(), public.crear_remesa(bigint[], date, text),
   public.remesa_cambiar_estado(bigint, text), public.devolver_recibo(bigint, text), public.reparacion_facturada(bigint),
   public.sepa_id_acreedor(text, text), public.dia_taller(timestamptz), public.hoy_taller() to authenticated;
