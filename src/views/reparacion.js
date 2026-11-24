@@ -1,4 +1,4 @@
-import { sb, state, esc, attr, ok, money, fdate, fdt, today, chip, ESTADOS_REP, nombreTecnico, tecnicoOpts, opt, toast, fail, modal, confirmar, puedeFacturar, esOficina } from '../lib.js';
+import { sb, state, esc, attr, ok, money, fdate, fdt, today, chip, ESTADOS_REP, nombreTecnico, tecnicoOpts, opt, toast, fail, modal, confirmar, puedeFacturar, esOficina, PERIODOS } from '../lib.js';
 import { CONDICIONES_DEF, firmaPad } from './recepcion.js';
 import { I } from '../icons.js';
 import { avisoNotas, alertasVehiculo } from './comun.js';
@@ -12,9 +12,10 @@ export async function render(el, params) {
     sb.from('reparaciones').select('*,clientes(*),motos(*)').eq('id', id).single(),
     sb.from('reparacion_piezas').select('*,piezas(referencia,nombre)').eq('reparacion_id', id).order('id'),
     sb.from('reparacion_horas').select('*').eq('reparacion_id', id).order('fecha'),
-    puedeFacturar() ? sb.from('facturas').select('id,numero,total,estado').eq('reparacion_id', id).neq('estado', 'anulada') : Promise.resolve({ data: [] }),
+    puedeFacturar() ? sb.from('factura_reparaciones').select('facturas(id,numero,total,estado,tipo)').eq('reparacion_id', id) : Promise.resolve({ data: [] }),
   ]);
-  const r = ok(rq), piezas = ok(pq), horas = ok(hq), facts = ok(fq);
+  const r = ok(rq), piezas = ok(pq), horas = ok(hq);
+  const facts = ok(fq).map((x) => x.facturas).filter((f) => f && f.tipo === 'ordinaria' && f.estado !== 'anulada');
   const totPiezas = piezas.reduce((s, p) => s + p.cantidad * p.pvp, 0);
   const totHoras = horas.reduce((s, h) => s + h.horas * h.precio_hora, 0);
   const numHoras = horas.reduce((s, h) => s + Number(h.horas), 0);
@@ -163,6 +164,7 @@ export async function render(el, params) {
     const def = state.impuestos.find((i) => i.por_defecto) || state.impuestos[0];
     T.innerHTML = f ? `<section class="card"><h2>Factura ${esc(f.numero)}</h2><p style="margin:0">Total ${money(f.total)} · ${f.estado === 'cobrada' ? '<span class="chip ok">Cobrada</span>' : '<span class="chip warn">Pendiente de cobro</span>'}</p><a class="btn pri" href="#/factura/${f.id}" style="align-self:flex-start">Abrir factura</a></section>`
       : `<section class="card"><h2>Facturar esta reparación</h2>
+        ${r.clientes?.periodo_facturacion && r.clientes.periodo_facturacion !== 'inmediata' ? `<p class="aviso" style="margin:0">Este cliente se factura <b>${esc(PERIODOS[r.clientes.periodo_facturacion])}</b>. Si no la facturas ahora, la orden queda como albarán y entra sola en su factura del periodo (Facturación › Pendientes de facturar).</p>` : ''}
         <p class="muted" style="margin:0">Se creará la factura con ${horas.length} líneas de mano de obra y ${piezas.length} de piezas. Base: <b>${money(totPiezas + totHoras)}</b>.</p>
         <div class="field" style="max-width:320px"><label for="f-imp">Impuesto</label><select id="f-imp" class="inp">${state.impuestos.filter((i) => i.activo).map((i) => opt(i.id, `${i.nombre} ${Number(i.porcentaje).toLocaleString('es-ES')} %`, def?.id)).join('')}</select></div>
         <button type="button" class="btn pri" data-fact style="align-self:flex-start" ${totPiezas + totHoras <= 0 ? 'disabled' : ''}>Crear factura</button>

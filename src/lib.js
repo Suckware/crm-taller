@@ -37,6 +37,29 @@ export const ESTADOS_REP = {
   recibida: ['Recibida', 'info'], diagnostico: ['En diagnóstico', 'info'], esperando_aprobacion: ['Esperando aprobación', 'warn'],
   esperando_piezas: ['Esperando piezas', 'warn'], en_reparacion: ['En reparación', 'info'], lista: ['Lista para recoger', 'ok'], entregada: ['Entregada', ''],
 };
+// ---------- Periodicidad de facturación del cliente ----------
+export const PERIODOS = { inmediata: 'en el momento', decenal: 'cada 10 días', quincenal: 'cada 15 días', mensual: 'cada mes' };
+const ultimoDiaMes = (y, m) => new Date(y, m + 1, 0).getDate();
+// Último día del periodo al que pertenece el día ('YYYY-MM-DD')
+export function finPeriodo(dia, periodo) {
+  const [y, m, d] = dia.split('-').map(Number);
+  const u = ultimoDiaMes(y, m - 1);
+  const fin = periodo === 'decenal' ? (d <= 10 ? 10 : d <= 20 ? 20 : u) : periodo === 'quincenal' ? (d <= 15 ? 15 : u) : periodo === 'mensual' ? u : d;
+  return `${y}-${String(m).padStart(2, '0')}-${String(fin).padStart(2, '0')}`;
+}
+// Último día del último periodo ya cerrado antes de hoy (fecha de corte propuesta)
+export function ultimoCorte(periodo, hoy = today()) {
+  if (!periodo || periodo === 'inmediata') return hoy;
+  const ayer = isoDay(new Date(new Date(hoy + 'T12:00:00').getTime() - 86400000));
+  let f = finPeriodo(ayer, periodo);
+  if (f > ayer) { // el periodo de ayer aún no ha terminado: el anterior
+    const [y, m, d] = f.split('-').map(Number);
+    const ini = periodo === 'mensual' ? 1 : periodo === 'quincenal' ? (d === 15 ? 1 : 16) : (d === 10 ? 1 : d === 20 ? 11 : 21);
+    f = isoDay(new Date(y, m - 1, ini - 1, 12));
+  }
+  return f;
+}
+
 export const chip = (map, k) => { const [t, c] = map[k] || [k, '']; return `<span class="chip ${c}">${esc(t)}</span>`; };
 
 export const rol = () => state.perfil?.rol;
