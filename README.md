@@ -46,3 +46,9 @@ Menú **Registro de cambios**: quién ha dado de alta, cambiado o borrado qué y
 - En **Registrar compra** (entradas) y en **Añadir pieza** de una orden (salidas) la pieza se busca por nombre, referencia, marca o código de barras. La búsqueda la hace la base de datos (25 resultados), así que va rápida aunque haya miles de piezas.
 - Con lector de código de barras: el lector escribe el código y pulsa Intro; si coincide con un código o una referencia, la pieza queda elegida y se pasa a la cantidad.
 - El código de barras es único si se rellena (`supabase/migrations/20261124150000_piezas_codigo_barras.sql`) y se puede importar desde otro programa (columna EAN / código de barras).
+
+## Trabajar sin internet en el taller (fases 1 y 2)
+
+- **Fase 1 · datos preparados para sincronizar.** Las tablas que irán a la copia local del taller tienen `uid` (código único que no cambia) y `updated_at` (lo pone la base de datos). Los borrados se apuntan en `borrados` (solo tabla y código). Datos bancarios, remesas, sesiones y el registro de cambios nunca irán a la copia local.
+- **Fase 2 · aviso para no solapar citas.** Configuración › **Equipo del taller** (solo administrador): se marca el ordenador del taller. Ese ordenador manda una señal de vida cada minuto mientras el programa está abierto. Si pasa más de X minutos sin señal (3 por defecto) y no se cerró de forma normal, la agenda y la pantalla de nueva cita de los demás muestran un aviso amarillo. Si todo está bien, no sale nada. El aviso nunca impide guardar.
+- La hora la calcula el servidor (`estado_sync()`), no el dispositivo.

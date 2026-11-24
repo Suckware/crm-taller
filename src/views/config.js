@@ -2,6 +2,7 @@ import { sb, state, esc, attr, ok, modal, toast, fail, formData, field, area, op
 import { ibanValido, bicValido, idAcreedor } from '../sepa.js';
 import { CONDICIONES_DEF } from './recepcion.js';
 import * as importar from './importar.js';
+import { equipoLocal, marcarEquipoLocal, iniciarLatido, pararLatido, avisarCierre, estadoSync } from '../sync.js';
 
 const TEMAS = [
   ['Sergio Moto Sport', '#1F3A6E', '#111827'], ['Azul marino', '#1E3A8A', '#0B1B36'], ['Pizarra', '#334155', '#1E293B'],
@@ -11,7 +12,7 @@ const TEMAS = [
 export async function render(el, params) {
   const adm = esAdmin();
   const tab = params.t || (adm ? 'taller' : 'perfil');
-  const tabs = adm ? [['taller', 'Datos del taller'], ['apariencia', 'Logo y colores'], ['impuestos', 'Impuestos'], ['tarifas', 'Tarifas'], ['campos', 'Campos personalizados'], ['usuarios', 'Usuarios y permisos'], ['licencia', 'Licencia'], ['importar', 'Importar datos'], ['perfil', 'Mi perfil']] : [['perfil', 'Mi perfil']];
+  const tabs = adm ? [['taller', 'Datos del taller'], ['apariencia', 'Logo y colores'], ['impuestos', 'Impuestos'], ['tarifas', 'Tarifas'], ['campos', 'Campos personalizados'], ['usuarios', 'Usuarios y permisos'], ['equipos', 'Equipo del taller'], ['licencia', 'Licencia'], ['importar', 'Importar datos'], ['perfil', 'Mi perfil']] : [['perfil', 'Mi perfil']];
   el.innerHTML = `<div class="head"><div class="t"><h1>Configuración</h1><div class="muted">${adm ? 'Solo el administrador puede cambiar estos ajustes' : 'Los ajustes del taller los gestiona el administrador'}</div></div></div>
   <nav class="tabs">${tabs.map(([k, t]) => `<a href="#/config?t=${k}" class="${k === tab ? 'on' : ''}">${t}</a>`).join('')}</nav><div data-tab></div>`;
   const T = el.querySelector('[data-tab]');
@@ -164,6 +165,68 @@ export async function render(el, params) {
   }
 
   if (tab === 'importar') { importar.render(T); return; }
+
+  if (tab === 'equipos') {
+    const E = ok(await sb.from('equipos').select('*').eq('activo', true).order('alta'));
+    const est = Object.fromEntries((await estadoSync(true)).map((x) => [x.id, x]));
+    const aqui = equipoLocal();
+    const esteRegistrado = E.some((x) => x.id === aqui);
+    const estado = (x) => {
+      if (x.id === aqui) return '<span class="chip info">Este ordenador</span>';
+      if (est[x.id]?.aviso) return '<span class="chip warn">Sin señal: los demás ven el aviso</span>';
+      if (x.cerrado) return '<span class="chip">Cerrado</span>';
+      return '<span class="chip ok">Conectado</span>';
+    };
+    T.innerHTML = `<section class="card" style="max-width:900px"><h2>Equipo del taller</h2>
+      <p style="margin:0">Marca aquí el ordenador del taller. Mientras tenga el programa abierto, avisa a la nube cada minuto de que está conectado.
+      Si deja de avisar (por ejemplo, porque se ha ido internet en el taller), quien agenda desde el móvil o desde fuera ve un aviso amarillo:
+      puede haber citas hechas en el taller que aún no han subido. Si todo va bien, no se ve ningún aviso.</p>
+      <p class="muted small" style="margin:0">Si el programa se cierra de forma normal (cerrar sesión o cerrar la ventana), no sale el aviso. Si el ordenador se apaga de golpe, sí: puedes quitarlo aquí.</p>
+      ${E.length ? `<div class="tablewrap"><table><thead><tr><th>Equipo</th><th>Estado</th><th>Última señal</th><th>Usuario</th><th></th></tr></thead><tbody>${E.map((x) => `<tr>
+        <td><b>${esc(x.nombre)}</b><div class="muted small">dado de alta el ${esc(fdate(x.alta))}</div></td>
+        <td>${estado(x)}</td><td>${x.ultimo_latido ? esc(fdt(x.ultimo_latido)) : '<span class="muted small">Nunca</span>'}</td>
+        <td>${esc(x.ultimo_usuario ? (state.perfiles.find((p) => p.id === x.ultimo_usuario)?.nombre || '') : '')}</td>
+        <td class="right" style="white-space:nowrap">${est[x.id]?.aviso ? `<button type="button" class="btn sm" data-quitar="${attr(x.id)}">Quitar aviso</button> ` : ''}<button type="button" class="btn sm danger" data-retirar="${attr(x.id)}">Retirar</button></td></tr>`).join('')}</tbody></table></div>`
+        : '<p class="muted" style="margin:0">Todavía no hay ningún equipo del taller.</p>'}
+      ${esteRegistrado ? '<p style="margin:0"><b>Este ordenador es el equipo del taller.</b></p>'
+        : '<button type="button" class="btn pri" data-alta style="align-self:flex-start">Usar este ordenador como equipo del taller</button>'}
+      <h3>Cuándo avisar</h3>
+      <div class="form"><div class="field"><label for="sync-min">Avisar tras estos minutos sin señal</label><input id="sync-min" type="number" min="1" max="120" step="1" value="${attr(cfg.sync_aviso_min ?? 3)}"></div></div>
+      <button type="button" class="btn" data-min style="align-self:flex-start">Guardar</button></section>`;
+    T.querySelector('[data-alta]')?.addEventListener('click', () => {
+      modal('Equipo del taller', `<div class="form">${field('Nombre del equipo', 'nombre', 'Ordenador del taller', 'text', 'maxlength="60" required')}</div>
+        <p class="muted small" style="margin:0">Hazlo en el ordenador que se queda en el taller. Se guarda en este navegador: si usas otro navegador en el mismo ordenador, hay que volver a darlo de alta.</p>`, {
+        okText: 'Dar de alta',
+        onOk: async (root) => {
+          const nombre = formData(root).nombre;
+          if (!nombre) throw new Error('Pon un nombre');
+          const x = ok(await sb.from('equipos').insert({ nombre, cerrado: false, ultimo_latido: new Date().toISOString() }).select('id').single());
+          marcarEquipoLocal(x.id); iniciarLatido();
+          toast('Este ordenador ya es el equipo del taller'); recargar();
+        },
+      });
+    });
+    T.querySelectorAll('[data-quitar]').forEach((b) => b.addEventListener('click', async () => {
+      try { ok(await sb.from('equipos').update({ cerrado: true }).eq('id', b.dataset.quitar)); toast('Aviso quitado'); recargar(); } catch (e) { fail(e); }
+    }));
+    T.querySelectorAll('[data-retirar]').forEach((b) => b.addEventListener('click', () => {
+      const x = E.find((y) => y.id === b.dataset.retirar);
+      modal('Retirar equipo', `<p style="margin:0">¿Retirar <b>${esc(x.nombre)}</b>? Deja de ser el equipo del taller y no volverá a salir el aviso por él.</p>`, {
+        okText: 'Retirar',
+        onOk: async () => {
+          if (x.id === aqui) { await avisarCierre(); pararLatido(); marcarEquipoLocal(null); }
+          ok(await sb.from('equipos').update({ activo: false, cerrado: true }).eq('id', x.id));
+          toast('Equipo retirado'); recargar();
+        },
+      });
+    }));
+    T.querySelector('[data-min]').addEventListener('click', async () => {
+      const n = Math.round(Number(T.querySelector('#sync-min').value));
+      if (!(n >= 1 && n <= 120)) return toast('Pon entre 1 y 120 minutos', true);
+      try { ok(await sb.from('config').update({ sync_aviso_min: n }).eq('id', 1)); toast('Guardado'); recargar(); } catch (e) { fail(e); }
+    });
+    return;
+  }
 
   if (tab === 'licencia') {
     const l = state.licencia || {};

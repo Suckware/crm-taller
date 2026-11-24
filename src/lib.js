@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 
 // Solo la clave pública (publishable). La seguridad la aplica la base de datos con RLS por roles.
 export const SUPABASE_URL = 'https://sxrakoktzmwjmzlmnvts.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_VW3JAL_qNwgqBRPGEkF4CQ_INJjwP51';
+export const SUPABASE_KEY = 'sb_publishable_VW3JAL_qNwgqBRPGEkF4CQ_INJjwP51';
 export const DOMINIO_USUARIOS = 'sergiomotosport.app';
 
 export const sb = createClient(SUPABASE_URL, SUPABASE_KEY, {
