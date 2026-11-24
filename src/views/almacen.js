@@ -1,6 +1,6 @@
 import { sb, esc, attr, ok, money, fdate, fdt, today, modal, toast, fail, formData, req, field, area, opt, esOficina, esAdmin, confirmar } from '../lib.js';
 import { I } from '../icons.js';
-import { nuevoCliente } from './comun.js';
+import { nuevoCliente, cargarVentas, tablaVentas } from './comun.js';
 
 export async function render(el, params) {
   const tab = params.t || 'stock';
@@ -30,7 +30,7 @@ export async function render(el, params) {
       <label class="check" style="align-items:center"><input type="checkbox" data-bajo> Solo stock bajo</label></div>
     <section class="card"><div class="tablewrap"><table>
       <thead><tr><th>Ref.</th><th>Pieza</th><th class="right">Stock</th><th class="right">PVP</th>${of ? '<th class="right hide-movil">Compra</th>' : ''}<th class="hide-movil">Última compra</th><th class="hide-movil">Proveedor</th><th class="hide-movil">Ubicación</th></tr></thead>
-      <tbody>${P.map((p) => `<tr class="${of ? 'click' : ''}" data-id="${p.id}" data-txt="${attr(`${p.referencia} ${p.nombre} ${p.marca || ''}`.toLowerCase())}" data-cat="${attr(p.categoria || '')}" data-bajo="${p.stock <= p.stock_minimo ? 1 : 0}">
+      <tbody>${P.map((p) => `<tr class="click" data-id="${p.id}" data-txt="${attr(`${p.referencia} ${p.nombre} ${p.marca || ''}`.toLowerCase())}" data-cat="${attr(p.categoria || '')}" data-bajo="${p.stock <= p.stock_minimo ? 1 : 0}">
         <td class="small">${esc(p.referencia)}</td><td><b>${esc(p.nombre)}</b><div class="small muted">${esc([p.marca, p.categoria].filter(Boolean).join(' · '))}</div></td>
         <td class="right num"><b style="color:${p.stock <= p.stock_minimo ? 'var(--bad)' : 'inherit'}">${p.stock}</b><div class="small muted">mín. ${p.stock_minimo}</div></td>
         <td class="right num">${money(p.pvp)}</td>${of ? `<td class="right num hide-movil">${money(p.precio_compra)}</td>` : ''}
@@ -42,7 +42,7 @@ export async function render(el, params) {
     };
     T.querySelectorAll('[data-q],[data-cat],[data-bajo]').forEach((x) => x.addEventListener('input', filtrar));
     filtrar();
-    if (of) T.querySelectorAll('tr[data-id]').forEach((tr) => tr.addEventListener('click', () => editarPieza(P.find((p) => p.id == tr.dataset.id), provs, recargar)));
+    T.querySelectorAll('tr[data-id]').forEach((tr) => tr.addEventListener('click', () => { location.hash = `#/pieza/${tr.dataset.id}`; }));
   }
 
   if (tab === 'compras' && of) {
@@ -84,16 +84,102 @@ export async function render(el, params) {
   }
 
   if (tab === 'movimientos') {
-    const M = ok(await sb.from('movimientos_stock').select('*,piezas(referencia,nombre),proveedores(nombre),reparaciones(id,numero)').order('fecha', { ascending: false }).limit(150));
-    const tipo = { entrada: ['Entrada', 'ok'], salida: ['Salida', 'info'], devolucion: ['Devolución', 'warn'], ajuste: ['Ajuste', ''] };
-    T.innerHTML = `<section class="card"><div class="tablewrap"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Pieza</th><th class="right">Cant.</th><th class="hide-movil">Origen / destino</th></tr></thead>
-      <tbody>${M.map((m) => `<tr><td class="small">${fdt(m.fecha)}</td><td><span class="chip ${tipo[m.tipo][1]}">${tipo[m.tipo][0]}</span></td><td>${esc(m.piezas?.nombre)}<div class="small muted">${esc(m.piezas?.referencia)}</div></td>
-        <td class="right num"><b>${m.tipo === 'salida' ? '−' : '+'}${m.cantidad}</b></td>
-        <td class="hide-movil small">${m.reparaciones ? `<a href="#/reparacion/${m.reparaciones.id}">${esc(m.reparaciones.numero)}</a> · ` : ''}${esc(m.proveedores?.nombre || '')}${m.nota ? ' · ' + esc(m.nota) : ''}</td></tr>`).join('') || '<tr><td colspan="5" class="empty">Sin movimientos</td></tr>'}</tbody></table></div></section>`;
+    // Las fechas se filtran en la base de datos (por defecto, los últimos 90 días); el resto, al momento en pantalla
+    const hace90 = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
+    const desde = /^\d{4}-\d{2}-\d{2}$/.test(params.d1 || '') ? params.d1 : hace90;
+    const hasta = /^\d{4}-\d{2}-\d{2}$/.test(params.d2 || '') ? params.d2 : today();
+    const M = ok(await sb.from('movimientos_stock').select(SEL_MOV)
+      .gte('fecha', new Date(desde + 'T00:00:00').toISOString()).lte('fecha', new Date(hasta + 'T23:59:59.999').toISOString())
+      .order('fecha', { ascending: false }).limit(2000));
+    tablaMovimientos(T, M, { desde, hasta, provs, params });
   }
 }
 
-function editarPieza(p, provs, recargar) {
+const SEL_MOV = '*,piezas(referencia,nombre),proveedores(nombre),reparaciones(id,numero,clientes(nombre))';
+const TIPO_MOV = { entrada: ['Entrada', 'ok'], salida: ['Salida', 'info'], devolucion: ['Devolución', 'warn'], ajuste: ['Ajuste', ''] };
+
+// Tabla de movimientos. Con "f" muestra la barra de filtros (fechas, tipo, proveedor, pieza, cliente y documento).
+function tablaMovimientos(T, M, f) {
+  const txt = (m) => ({
+    pieza: `${m.piezas?.referencia || ''} ${m.piezas?.nombre || ''}`.toLowerCase(),
+    cliente: (m.reparaciones?.clientes?.nombre || '').toLowerCase(),
+    doc: `${m.reparaciones?.numero || ''} ${m.nota || ''}`.toLowerCase(),
+  });
+  T.innerHTML = `${f ? `<section class="card filtros-mov" data-fil>
+      <div class="form">
+        ${field('Desde', 'd1', f.desde, 'date', `max="${today()}"`)}${field('Hasta', 'd2', f.hasta, 'date')}
+        <div class="field"><label for="m-tipo">Tipo</label><select id="m-tipo" name="tipo">${opt('', 'Todos', '')}${Object.entries(TIPO_MOV).map(([k, [t]]) => opt(k, t, '')).join('')}</select></div>
+        <div class="field"><label for="m-prov">Proveedor</label><select id="m-prov" name="prov">${opt('', 'Todos', '')}${f.provs.map((v) => opt(v.id, v.nombre, '')).join('')}</select></div>
+        ${field('Pieza', 'pieza', f.params.pz || '', 'search', 'placeholder="Nombre o referencia" maxlength="60"')}
+        ${field('Cliente', 'cliente', '', 'search', 'placeholder="Nombre del cliente" maxlength="60"')}
+        ${field('Documento', 'doc', '', 'search', 'placeholder="Nº de orden o albarán" maxlength="60"')}
+      </div>
+      <div class="actions"><span class="muted small" data-cuenta></span><button type="button" class="btn sm" data-limpiar>Quitar filtros</button></div></section>` : ''}
+    <section class="card"><div class="tablewrap"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Pieza</th><th class="right">Cant.</th><th class="hide-movil">Cliente / proveedor</th><th class="hide-movil">Documento</th></tr></thead>
+      <tbody>${M.map((m, i) => `<tr data-i="${i}"><td class="small">${fdt(m.fecha)}</td><td><span class="chip ${TIPO_MOV[m.tipo][1]}">${TIPO_MOV[m.tipo][0]}</span></td><td><a href="#/pieza/${m.pieza_id}">${esc(m.piezas?.nombre)}</a><div class="small muted">${esc(m.piezas?.referencia)}</div></td>
+        <td class="right num"><b>${m.tipo === 'salida' ? '−' : '+'}${m.cantidad}</b></td>
+        <td class="hide-movil small">${esc(m.reparaciones?.clientes?.nombre || m.proveedores?.nombre || '')}</td>
+        <td class="hide-movil small">${m.reparaciones ? `<a href="#/reparacion/${m.reparaciones.id}">${esc(m.reparaciones.numero)}</a>` : ''}${m.reparaciones && m.nota ? ' · ' : ''}${esc(m.nota || '')}</td></tr>`).join('')}
+        <tr data-vacio style="display:none"><td colspan="6" class="empty">Sin movimientos${f ? ' con estos filtros' : ''}</td></tr></tbody></table></div></section>`;
+  const filas = [...T.querySelectorAll('tr[data-i]')];
+  const vacio = T.querySelector('[data-vacio]');
+  if (!f) { vacio.style.display = M.length ? 'none' : ''; return; }
+  const F = T.querySelector('[data-fil]');
+  const X = M.map(txt);
+  const aplicar = () => {
+    const o = formData(F);
+    const pz = (o.pieza || '').toLowerCase(), cl = (o.cliente || '').toLowerCase(), dc = (o.doc || '').toLowerCase();
+    let n = 0;
+    filas.forEach((tr) => {
+      const m = M[tr.dataset.i], x = X[tr.dataset.i];
+      const v = (!o.tipo || m.tipo === o.tipo) && (!o.prov || String(m.proveedor_id) === String(o.prov)) && (!pz || x.pieza.includes(pz)) && (!cl || x.cliente.includes(cl)) && (!dc || x.doc.includes(dc));
+      tr.style.display = v ? '' : 'none'; if (v) n++;
+    });
+    vacio.style.display = n ? 'none' : '';
+    F.querySelector('[data-cuenta]').textContent = `${n} de ${M.length} movimientos${M.length >= 2000 ? ' (se muestran los 2.000 más recientes: acorta las fechas)' : ''}`;
+  };
+  F.querySelectorAll('[name=tipo],[name=prov],[name=pieza],[name=cliente],[name=doc]').forEach((x) => x.addEventListener('input', aplicar));
+  F.querySelectorAll('[name=d1],[name=d2]').forEach((x) => x.addEventListener('change', () => {
+    const d1 = F.querySelector('[name=d1]').value, d2 = F.querySelector('[name=d2]').value;
+    if (d1 && d2 && d1 <= d2) location.hash = `#/almacen?${new URLSearchParams({ t: 'movimientos', d1, d2 })}`;
+  }));
+  F.querySelector('[data-limpiar]').addEventListener('click', () => { location.hash = '#/almacen?t=movimientos&r=' + Date.now(); });
+  aplicar();
+}
+
+// ---------- Ficha de la pieza: Datos · Histórico de ventas · Movimientos ----------
+export async function renderFicha(el, params) {
+  const id = Number(params.id);
+  const of = esOficina();
+  const [pq, vq] = await Promise.all([sb.from('piezas').select('*,proveedores(nombre)').eq('id', id).single(), sb.from('proveedores').select('*').order('nombre')]);
+  const p = ok(pq), provs = ok(vq);
+  const tabs = [['datos', 'Datos'], ['ventas', 'Histórico de ventas'], ['movimientos', 'Movimientos']];
+  const tab = tabs.some(([k]) => k === params.t) ? params.t : 'datos';
+  const bajo = p.stock <= p.stock_minimo;
+  el.innerHTML = `
+  <div class="head"><div class="t"><div class="muted small"><a href="#/almacen">Almacén</a> › pieza</div><h1>${esc(p.nombre)}</h1>
+    <div class="muted" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><span class="chip">${esc(p.referencia)}</span>${p.marca ? `<span>${esc(p.marca)}</span>` : ''}${p.categoria ? `<span class="chip info">${esc(p.categoria)}</span>` : ''}<span class="chip ${bajo ? 'bad' : 'ok'}">Stock ${p.stock}</span></div></div>
+    ${of ? `<div class="actions"><a class="btn" href="#/almacen?t=compras&p=${id}">Registrar compra</a><button type="button" class="btn pri" data-ed>Editar pieza</button></div>` : ''}</div>
+  <nav class="tabs">${tabs.map(([k, t]) => `<a href="#/pieza/${id}?t=${k}" class="${k === tab ? 'on' : ''}">${esc(t)}</a>`).join('')}</nav>
+  <div data-tab><p class="muted">Cargando…</p></div>`;
+  const T = el.querySelector('[data-tab]');
+  const recargar = () => renderFicha(el, params);
+  el.querySelector('[data-ed]')?.addEventListener('click', () => editarPieza(p, provs, recargar, () => { location.hash = '#/almacen'; }));
+
+  if (tab === 'datos') {
+    const fila = (l, v) => `<div class="field"><span class="lbl">${esc(l)}</span><b style="padding:6px 0">${v}</b></div>`;
+    T.innerHTML = `<section class="card"><div class="form">
+      ${fila('Referencia', esc(p.referencia))}${fila('Nombre', esc(p.nombre))}${fila('Marca', esc(p.marca || '—'))}${fila('Categoría', esc(p.categoria || '—'))}
+      ${fila('PVP', money(p.pvp))}${of ? fila('Precio de compra', money(p.precio_compra)) + fila('Margen', p.precio_compra > 0 ? `${(((p.pvp - p.precio_compra) / p.precio_compra) * 100).toFixed(0)} %` : '—') : ''}
+      ${fila('Stock', `<span style="color:${bajo ? 'var(--bad)' : 'inherit'}">${p.stock}</span> <span class="muted small">(mín. ${p.stock_minimo})</span>`)}
+      ${fila('Última compra', fdate(p.fecha_compra) || '—')}${fila('Proveedor', esc(p.proveedores?.nombre || '—'))}${fila('Ubicación', esc(p.ubicacion || '—'))}
+    </div></section>`;
+  }
+  if (tab === 'ventas') tablaVentas(T, await cargarVentas({ pieza: id }), { porPieza: true });
+  if (tab === 'movimientos') tablaMovimientos(T, ok(await sb.from('movimientos_stock').select(SEL_MOV).eq('pieza_id', id).order('fecha', { ascending: false }).limit(500)));
+}
+
+function editarPieza(p, provs, recargar, trasBorrar) {
   p = p || {};
   const m = modal(p.id ? 'Editar pieza' : 'Nueva pieza', `<div class="form">
     ${field('Referencia *', 'referencia', p.referencia, 'text', 'maxlength="40" required')}
@@ -126,6 +212,6 @@ function editarPieza(p, provs, recargar) {
   });
   m.querySelector('[data-del]')?.addEventListener('click', async () => {
     if (!(await confirmar('¿Eliminar esta pieza del almacén?', 'Eliminar'))) return;
-    try { ok(await sb.from('piezas').delete().eq('id', p.id)); m.remove(); toast('Pieza eliminada'); recargar(); } catch (e) { fail(/foreign/.test(e.message) ? new Error('Se ha usado en reparaciones: no se puede eliminar') : e); }
+    try { ok(await sb.from('piezas').delete().eq('id', p.id)); m.remove(); toast('Pieza eliminada'); (trasBorrar || recargar)(); } catch (e) { fail(/foreign/.test(e.message) ? new Error('Se ha usado en reparaciones: no se puede eliminar') : e); }
   });
 }

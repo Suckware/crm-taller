@@ -191,6 +191,7 @@ tfoot td { font-weight: 700; border-bottom: 0; }
 .shell.plegado .side.abierto:not(.cerrando) :is(.brand div, .nav a span, .fijar span) { display: block; }
 .shell.plegado .side.abierto:not(.cerrando) .me { display: flex; }
 .shell.plegado .side.abierto:not(.cerrando) .nav a { padding: 12px 14px; }
+.show-movil { display: none; }
 @media (hover: hover) {
   .shell.plegado .side:hover:not(.cerrando) { width: 248px; padding: 18px 14px; transition-delay: .12s; }
   .shell.plegado .side:hover:not(.cerrando) :is(.brand div, .nav a span, .fijar span) { display: block; }
@@ -229,6 +230,7 @@ tfoot td { font-weight: 700; border-bottom: 0; }
   .col { min-height: 0; }
   .invoice { padding: 18px; }
   .hide-movil { display: none !important; }
+  .show-movil { display: block !important; }
   .modal { padding: 18px; border-radius: 16px 16px 0 0; max-height: 96vh; align-self: flex-end; }
   .modal-bg { padding: 0; }
 }

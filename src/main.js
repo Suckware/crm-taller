@@ -35,6 +35,7 @@ const ROUTES = [
   [/^\/clientes$/, clientes.renderLista, 'clientes'],
   [/^\/cliente\/(\d+)$/, clientes.renderFicha, 'clientes'],
   [/^\/almacen$/, almacen.render, 'almacen'],
+  [/^\/pieza\/(\d+)$/, almacen.renderFicha, 'almacen'],
   [/^\/facturacion$/, facturacion.render, 'fact'],
   [/^\/factura\/(\d+)$/, facturacion.renderFactura, 'fact'],
   [/^\/config$/, config.render, 'config'],
