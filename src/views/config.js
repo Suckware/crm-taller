@@ -1,4 +1,5 @@
 import { sb, state, esc, attr, ok, modal, toast, fail, formData, field, area, opt, esAdmin, aplicarTema, cargarComunes, hex, money, fdate, fdt, licEstado, licPlan, MODULOS_CRM, refrescarLicencia, activarLicencia } from '../lib.js';
+import { ibanValido, bicValido, idAcreedor } from '../sepa.js';
 import { CONDICIONES_DEF } from './recepcion.js';
 
 const TEMAS = [
@@ -51,7 +52,15 @@ export async function render(el, params) {
       ${field('Próximo número de rectificativa', 'siguiente_rectificativa', cfg.siguiente_rectificativa, 'number', 'min="1"')}
       ${area('Condiciones de la hoja de autorización', 'condiciones_autorizacion', cfg.condiciones_autorizacion || CONDICIONES_DEF, 'maxlength="4000" style="min-height:180px"')}
       ${area('Pie de factura', 'pie_factura', cfg.pie_factura, 'maxlength="600"')}
-    </div><button type="button" class="btn pri" data-g style="align-self:flex-start">Guardar</button></section>`;
+    </div>
+    <h3 style="margin:0">Cobro de recibos por banco (remesas SEPA)</h3>
+    <div class="form">
+      ${field('Cuenta de cobro (IBAN)', 'sepa_iban', cfg.sepa_iban, 'text', 'maxlength="34" style="text-transform:uppercase" autocomplete="off"')}
+      ${field('BIC de tu banco', 'sepa_bic', cfg.sepa_bic, 'text', 'maxlength="11" style="text-transform:uppercase"')}
+      ${field('Sufijo del acreedor', 'sepa_sufijo', cfg.sepa_sufijo, 'text', 'maxlength="3" pattern="[0-9A-Z]{3}"')}
+      ${field('Serie de remesas', 'serie_remesa', cfg.serie_remesa, 'text', 'maxlength="12" pattern="[A-Za-z0-9-]+"')}
+    </div>
+    <p class="muted small" style="margin:0">Identificador de acreedor SEPA (se calcula con el CIF y el sufijo): <b>${esc(idAcreedor(cfg.cif, cfg.sepa_sufijo) || 'pon el CIF')}</b>. El sufijo lo da el banco; normalmente es 000.</p><button type="button" class="btn pri" data-g style="align-self:flex-start">Guardar</button></section>`;
     T.querySelector('[data-g]').addEventListener('click', async () => {
       try {
         const o = formData(T.querySelector('[data-f]'));
@@ -62,6 +71,10 @@ export async function render(el, params) {
         o.precio_hora = Number(o.precio_hora) || 0; o.siguiente_factura = Math.max(1, Math.floor(Number(o.siguiente_factura) || 1));
         o.siguiente_rectificativa = Math.max(1, Math.floor(Number(o.siguiente_rectificativa) || 1));
         if (!o.serie_rectificativa) delete o.serie_rectificativa;
+        if (o.sepa_iban) { o.sepa_iban = o.sepa_iban.replace(/\s+/g, '').toUpperCase(); if (!ibanValido(o.sepa_iban)) throw new Error('El IBAN de cobro no es válido'); }
+        if (o.sepa_bic) { o.sepa_bic = o.sepa_bic.toUpperCase(); if (!bicValido(o.sepa_bic)) throw new Error('El BIC no es válido'); }
+        o.sepa_sufijo = (o.sepa_sufijo || '000').toUpperCase(); if (!/^[0-9A-Z]{3}$/.test(o.sepa_sufijo)) throw new Error('El sufijo del acreedor son 3 números o letras');
+        if (!o.serie_remesa) delete o.serie_remesa; else if (!/^[A-Za-z0-9-]{1,12}$/.test(o.serie_remesa)) throw new Error('La serie de remesas solo admite letras, números y guiones');
         ok(await sb.from('config').update(o).eq('id', 1)); toast('Datos guardados'); recargar();
       } catch (e) { fail(e); }
     });

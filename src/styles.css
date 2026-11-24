@@ -167,6 +167,7 @@ tfoot td { font-weight: 700; border-bottom: 0; }
 /* Invoice */
 .invoice { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 34px; max-width: 860px; display: flex; flex-direction: column; gap: 22px; }
 .invoice .ih { display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+.invoice tr.grupo td { background: var(--accent-soft); font-size: 13px; padding-top: 8px; padding-bottom: 6px; }
 .invoice img { width: 74px; height: 74px; border-radius: 50%; }
 .totals { margin-left: auto; min-width: 260px; display: flex; flex-direction: column; gap: 6px; }
 .totals div { display: flex; justify-content: space-between; gap: 20px; }

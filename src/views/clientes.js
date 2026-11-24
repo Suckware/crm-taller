@@ -1,6 +1,7 @@
-import { sb, state, esc, attr, ok, fdate, ftime, money, chip, ESTADOS_REP, ESTADOS_CITA, modal, toast, fail, formData, field, area, opt, puedeFacturar, esAdmin, esOficina, confirmar } from '../lib.js';
+import { sb, state, esc, attr, ok, fdate, ftime, money, chip, ESTADOS_REP, ESTADOS_CITA, modal, toast, fail, formData, field, area, opt, puedeFacturar, esAdmin, esOficina, confirmar, PERIODOS } from '../lib.js';
 import { formCliente, validarCliente, nuevoCliente, editarVehiculo, alertasVehiculo } from './comun.js';
 import { I } from '../icons.js';
+import { ibanValido } from '../sepa.js';
 
 const rolChips = (c) => `${c.es_cliente ? '<span class="chip info">Cliente</span> ' : ''}${c.es_proveedor ? '<span class="chip warn">Proveedor</span>' : ''}`;
 
@@ -87,19 +88,25 @@ export async function renderFicha(el, params) {
         <div class="field"><label for="f-fp">Forma de pago</label><select id="f-fp" name="forma_pago">${opt('', '—', c.forma_pago ?? '')}${['Efectivo', 'Tarjeta', 'Bizum', 'Transferencia', 'Domiciliación SEPA', 'Pagaré'].map((x) => opt(x, x, c.forma_pago)).join('')}</select></div>
         ${field('Plazo de pago (días)', 'plazo_pago_dias', c.plazo_pago_dias, 'number', 'min="0" max="365"')}
         ${field('Días de pago', 'dias_pago', c.dias_pago, 'text', 'maxlength="80" placeholder="Ej.: días 5 y 20 de cada mes"')}
-      </div><button type="button" class="btn pri" data-gp style="align-self:flex-start">Guardar condiciones</button></section>
+        ${c.es_cliente ? `<div class="field"><label for="f-pf">Facturar</label><select id="f-pf" name="periodo_facturacion">${Object.entries(PERIODOS).map(([k, t]) => opt(k, k === 'inmediata' ? 'En el momento (al entregar)' : t.charAt(0).toUpperCase() + t.slice(1), c.periodo_facturacion || 'inmediata')).join('')}</select></div>` : ''}
+      </div>
+      ${c.es_cliente ? '<p class="muted small" style="margin:0">Con facturación periódica, las órdenes terminadas quedan como albarán y se agrupan en una factura por periodo desde Facturación › Pendientes de facturar. La factura periódica es para empresas, clubes y profesionales: a un particular se le factura en el momento.</p>' : ''}
+      <button type="button" class="btn pri" data-gp style="align-self:flex-start">Guardar condiciones</button></section>
       ${banco ? `<section class="card" data-b><h2>Datos bancarios</h2><p class="muted small" style="margin:0">Solo los ve y modifica el administrador.</p><div class="form">
         ${field('Titular', 'titular', banco.titular, 'text', 'maxlength="120"')}
         ${field('IBAN', 'iban', banco.iban, 'text', 'maxlength="34" style="text-transform:uppercase" autocomplete="off"')}
         ${field('BIC / SWIFT', 'bic', banco.bic, 'text', 'maxlength="11" style="text-transform:uppercase"')}
         ${field('Banco', 'banco', banco.banco, 'text', 'maxlength="80"')}
-        ${field('Referencia del mandato SEPA', 'mandato_sepa', banco.mandato_sepa, 'text', 'maxlength="40"')}
+        ${field('Referencia del mandato SEPA', 'mandato_sepa', banco.mandato_sepa, 'text', `maxlength="35" placeholder="Ej.: SMS-${String(id).padStart(5, '0')}"`)}
         ${field('Fecha del mandato', 'fecha_mandato', banco.fecha_mandato, 'date')}
-      </div><button type="button" class="btn pri" data-gb style="align-self:flex-start">Guardar datos bancarios</button></section>` : ''}`;
+      </div><p class="muted small" style="margin:0">Para cobrarle por remesa bancaria hacen falta el IBAN, la referencia y la fecha del mandato SEPA firmado por el cliente (guarda el papel firmado).</p>
+      <button type="button" class="btn pri" data-gb style="align-self:flex-start">Guardar datos bancarios</button></section>` : ''}`;
     T.querySelector('[data-gp]').addEventListener('click', async () => {
       try {
         const o = formData(T.querySelector('[data-p]'));
-        ok(await sb.from('clientes').update({ forma_pago: o.forma_pago, plazo_pago_dias: o.plazo_pago_dias === null ? null : Math.floor(Number(o.plazo_pago_dias)), dias_pago: o.dias_pago }).eq('id', id));
+        const upd = { forma_pago: o.forma_pago, plazo_pago_dias: o.plazo_pago_dias === null ? null : Math.floor(Number(o.plazo_pago_dias)), dias_pago: o.dias_pago };
+        if (o.periodo_facturacion && Object.hasOwn(PERIODOS, o.periodo_facturacion)) upd.periodo_facturacion = o.periodo_facturacion;
+        ok(await sb.from('clientes').update(upd).eq('id', id));
         toast('Condiciones guardadas'); recargar();
       } catch (e) { fail(e); }
     });
@@ -179,9 +186,3 @@ function editarContacto(clienteId, k, recargar) {
   });
 }
 
-function ibanValido(iban) {
-  if (!/^[A-Z]{2}\d{2}[A-Z0-9]{10,30}$/.test(iban)) return false;
-  const r = (iban.slice(4) + iban.slice(0, 4)).replace(/[A-Z]/g, (ch) => String(ch.charCodeAt(0) - 55));
-  let m = 0; for (const d of r) m = (m * 10 + Number(d)) % 97;
-  return m === 1;
-}
