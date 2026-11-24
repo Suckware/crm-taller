@@ -156,7 +156,8 @@ async function route() {
   }
   window.scrollTo(0, 0);
 }
-window.addEventListener('hashchange', route);
+// Se guarda la pantalla anterior para los botones "Volver"
+window.addEventListener('hashchange', (e) => { try { state.anterior = new URL(e.oldURL).hash || '#/'; } catch { state.anterior = null; } route(); });
 let lastDesk = window.matchMedia('(min-width: 1101px)').matches;
 window.addEventListener('resize', () => {
   const d = window.matchMedia('(min-width: 1101px)').matches;

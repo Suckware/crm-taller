@@ -50,3 +50,9 @@ Configuración › **Usuarios**: en cada persona se marca desde qué equipos pue
 - Sin la ventana Facturación en el rol, la base de datos no deja leer ni hacer facturas ni remesas.
 - Nadie puede cambiarse a sí mismo el rol, el acceso ni los dispositivos, y siempre queda al menos un administrador activo.
 - Los cambios en roles y usuarios quedan en el Registro de cambios.
+## Almacén: buscar piezas y código de barras
+
+- Cada pieza tiene ficha propia (Datos, Histórico de ventas y Movimientos) con botón **Volver** y su **margen** sobre el precio de compra.
+- En **Registrar compra** (entradas) y en **Añadir pieza** de una orden (salidas) la pieza se busca por nombre, referencia, marca o código de barras. La búsqueda la hace la base de datos (25 resultados), así que va rápida aunque haya miles de piezas.
+- Con lector de código de barras: el lector escribe el código y pulsa Intro; si coincide con un código o una referencia, la pieza queda elegida y se pasa a la cantidad.
+- El código de barras es único si se rellena (`supabase/migrations/20261124150000_piezas_codigo_barras.sql`) y se puede importar desde otro programa (columna EAN / código de barras).

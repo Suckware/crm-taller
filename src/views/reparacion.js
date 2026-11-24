@@ -1,7 +1,7 @@
 import { sb, state, esc, attr, ok, money, fdate, fdt, today, chip, ESTADOS_REP, nombreTecnico, tecnicoOpts, opt, toast, fail, modal, confirmar, puedeFacturar, esOficina, PERIODOS } from '../lib.js';
 import { CONDICIONES_DEF, firmaPad } from './recepcion.js';
 import { I } from '../icons.js';
-import { avisoNotas, alertasVehiculo } from './comun.js';
+import { avisoNotas, alertasVehiculo, buscadorPiezas } from './comun.js';
 
 const firmaOk = (f) => typeof f === 'string' && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(f);
 
@@ -180,28 +180,25 @@ export async function render(el, params) {
 }
 
 async function anadirPieza(repId, recargar) {
-  const m = modal('Añadir pieza del almacén', `
-    <input type="search" class="inp" placeholder="Buscar por nombre o referencia…" data-q aria-label="Buscar pieza" maxlength="60">
-    <div class="list" data-res style="margin-top:10px"></div>`, {});
-  const res = m.querySelector('[data-res]');
-  async function buscar(s) {
-    s = s.replace(/[%,()*]/g, ' ').trim();
-    let q = sb.from('piezas').select('id,referencia,nombre,stock,pvp,ubicacion').order('nombre').limit(25);
-    if (s) q = q.or(`nombre.ilike.%${s}%,referencia.ilike.%${s}%,marca.ilike.%${s}%`);
-    const P = (await q).data || [];
-    res.innerHTML = P.map((p) => `<div><span class="grow"><b>${esc(p.nombre)}</b><span class="muted small">${esc(p.referencia)} · ${money(p.pvp)} · ${p.ubicacion ? esc(p.ubicacion) + ' · ' : ''}<b style="color:${p.stock > 0 ? 'var(--ok)' : 'var(--bad)'}">stock ${p.stock}</b></span></span>
-      <input type="number" class="inp" value="1" min="1" max="${Math.max(p.stock, 1)}" style="width:70px" aria-label="Cantidad" data-cant="${p.id}">
-      <button type="button" class="btn sm pri" data-pick="${p.id}" ${p.stock <= 0 ? 'disabled' : ''}>Añadir</button></div>`).join('') || '<div class="empty">Sin resultados</div>';
-    res.querySelectorAll('[data-pick]').forEach((b) => b.addEventListener('click', async () => {
-      const p = P.find((x) => x.id == b.dataset.pick);
-      const cant = Math.floor(Number(res.querySelector(`[data-cant="${p.id}"]`).value) || 1);
-      if (cant < 1 || cant > p.stock) { toast(`Solo hay ${p.stock} en stock`, true); return; }
-      b.disabled = true;
-      try { ok(await sb.from('reparacion_piezas').insert({ reparacion_id: repId, pieza_id: p.id, cantidad: cant, pvp: p.pvp })); m.remove(); toast(`${p.nombre}: descontado del stock`); recargar('piezas'); } catch (e) { fail(e); b.disabled = false; }
-    }));
+  const m = modal('Añadir pieza del almacén', '<div data-buscador></div>', {});
+  const fila = (p) => `<div><span class="grow"><b>${esc(p.nombre)}</b><span class="muted small">${esc(p.referencia)}${p.codigo_barras ? ' · ' + esc(p.codigo_barras) : ''} · ${money(p.pvp)} · ${p.ubicacion ? esc(p.ubicacion) + ' · ' : ''}<b style="color:${p.stock > 0 ? 'var(--ok)' : 'var(--bad)'}">stock ${p.stock}</b></span></span>
+      <input type="number" class="inp" value="1" min="1" max="${Math.max(p.stock, 1)}" style="width:70px" aria-label="Cantidad" data-cant="${p.id}" inputmode="numeric">
+      <button type="button" class="btn sm pri" data-add="${p.id}" ${p.stock <= 0 ? 'disabled' : ''}>Añadir</button></div>`;
+  const cont = m.querySelector('[data-buscador]');
+  const vistos = {};
+  async function anadir(p, b) {
+    const cant = Math.floor(Number(cont.querySelector(`[data-cant="${p.id}"]`)?.value) || 1);
+    if (cant < 1 || cant > p.stock) { toast(`Solo hay ${p.stock} en stock`, true); return; }
+    if (b) b.disabled = true;
+    try { ok(await sb.from('reparacion_piezas').insert({ reparacion_id: repId, pieza_id: p.id, cantidad: cant, pvp: p.pvp })); m.remove(); toast(`${p.nombre}: descontado del stock`); recargar('piezas'); } catch (e) { fail(e); if (b) b.disabled = false; }
   }
-  let t; m.querySelector('[data-q]').addEventListener('input', (e) => { clearTimeout(t); t = setTimeout(() => buscar(e.target.value), 250); });
-  buscar('');
+  // Con el lector (coincidencia exacta) se pasa directamente a la cantidad: Intro añade la pieza
+  buscadorPiezas(cont, {
+    fila: (p) => { vistos[p.id] = p; return fila(p); },
+    onPick: (p) => { vistos[p.id] = p; setTimeout(() => { const c = cont.querySelector(`[data-cant="${p.id}"]`); c?.focus(); c?.select(); }, 0); },
+  });
+  cont.addEventListener('click', (e) => { const b = e.target.closest('[data-add]'); if (b) anadir(vistos[b.dataset.add], b); });
+  cont.addEventListener('keydown', (e) => { const c = e.target.closest('[data-cant]'); if (c && e.key === 'Enter') { e.preventDefault(); anadir(vistos[c.dataset.cant], cont.querySelector(`[data-add="${c.dataset.cant}"]`)); } });
 }
 
 function apuntarHoras(repId, r, recargar) {

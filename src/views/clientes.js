@@ -49,14 +49,15 @@ export async function renderFicha(el, params) {
   <div class="head"><div class="t"><div class="muted small"><a href="#/clientes">Clientes y proveedores</a> › ficha</div><h1>${esc(c.nombre)}</h1>
     <div class="muted" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">${rolChips(c)}${c.telefono ? `<a href="tel:${attr(c.telefono)}">${esc(c.telefono)}</a>` : ''}${c.email ? `<a href="mailto:${attr(c.email)}">${esc(c.email)}</a>` : ''}${tarifa ? `<span class="chip">Tarifa ${esc(tarifa.nombre)}</span>` : ''}${Number(c.descuento_pct) ? `<span class="chip ok">Dto. ${Number(c.descuento_pct)} %</span>` : ''}</div></div>
     ${c.es_cliente ? `<div class="actions"><a class="btn" href="#/cita/nueva?cliente=${id}">${I.agenda} Nueva cita</a><a class="btn pri" href="#/recepcion?cliente=${id}">Recibir moto</a></div>` : ''}</div>
-  ${c.notas_agenda ? `<div class="aviso"><b>Nota del cliente</b><span>${esc(c.notas_agenda)}</span></div>` : ''}
+  ${c.notas_agenda ? `<div class="aviso fila"><b>Nota del cliente</b><span>${esc(c.notas_agenda)}</span></div>` : ''}
   <nav class="tabs">${tabs.map(([k, t]) => `<a href="#/cliente/${id}?t=${k}" class="${k === tab ? 'on' : ''}">${esc(t)}</a>`).join('')}</nav>
   <div data-tab></div>`;
   const T = el.querySelector('[data-tab]');
   const recargar = () => renderFicha(el, params);
 
   if (tab === 'datos') {
-    T.innerHTML = `<section class="card" data-f>${formCliente(c)}<div class="actions"><button type="button" class="btn pri" data-g>Guardar cambios</button>${esAdmin() ? '<button type="button" class="btn danger" data-del>Eliminar ficha</button>' : ''}</div><p class="muted small" style="margin:0">Alta: ${fdate(c.created_at)}</p></section>`;
+    // En ordenador la ficha se compacta para verla entera sin usar el scroll
+    T.innerHTML = `<section class="card ficha-compacta" data-f>${formCliente(c)}<div class="actions"><button type="button" class="btn pri" data-g>Guardar cambios</button>${esAdmin() ? '<button type="button" class="btn danger" data-del>Eliminar ficha</button>' : ''}<span class="muted small">Alta: ${fdate(c.created_at)}</span></div></section>`;
     T.querySelector('[data-g]').addEventListener('click', async () => {
       try { const o = validarCliente(formData(T.querySelector('[data-f]')), c); ok(await sb.from('clientes').update(o).eq('id', id)); toast('Ficha guardada'); recargar(); } catch (e) { fail(e); }
     });
