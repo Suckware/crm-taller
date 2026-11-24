@@ -281,6 +281,7 @@ tfoot td { font-weight: 700; border-bottom: 0; }
 .lic-mods { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px 14px; margin: 6px 0 0; padding: 0; list-style: none; }
 .lic-mods li { display: flex; gap: 8px; align-items: center; font-size: 14px; }
 .lic-mods li.no { color: var(--muted); text-decoration: line-through; }
+.login .linkbtn { background: none; border: 0; color: var(--accent); font: inherit; font-size: 14px; text-decoration: underline; cursor: pointer; padding: 6px; align-self: center; }
 
 /* Importar datos */
 .imp-pasos { display: flex; flex-wrap: wrap; gap: 8px 22px; list-style: none; margin: 0; padding: 0; color: var(--muted); font-size: 14px; }
