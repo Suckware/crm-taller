@@ -1,4 +1,4 @@
-import { sb, state, esc, attr, ok, money, fdate, fdt, today, modal, toast, fail, formData, req, field, area, opt, esOficina, esAdmin, confirmar } from '../lib.js';
+import { sb, state, esc, attr, ok, money, fdate, fdt, today, modal, toast, fail, formData, req, field, area, opt, esOficina, esAdmin, confirmar, volverA, botonVolver } from '../lib.js';
 import { I } from '../icons.js';
 import { nuevoCliente, cargarVentas, tablaVentas, buscadorPiezas, SEL_PIEZA_BUSCAR } from './comun.js';
 
@@ -189,14 +189,12 @@ export async function renderFicha(el, params) {
   const tabs = [['datos', 'Datos'], ['ventas', 'Histórico de ventas'], ['movimientos', 'Movimientos']];
   const tab = tabs.some(([k]) => k === params.t) ? params.t : 'datos';
   const bajo = p.stock <= p.stock_minimo;
-  // "Volver" lleva a la pantalla desde la que se abrió la ficha (no a la pestaña anterior de la ficha)
-  if (state.anterior && !state.anterior.startsWith(`#/pieza/${id}`)) state.volverPieza = { id, a: state.anterior };
-  const volver = state.volverPieza?.id === id ? state.volverPieza.a : '#/almacen';
+  const volver = volverA('pieza', id, '#/almacen');
   const mg = margen(p);
   el.innerHTML = `
-  <div class="head"><div class="t"><div class="muted small"><a href="#/almacen">Almacén</a> › pieza</div><h1>${esc(p.nombre)}</h1>
+  <div class="head"><div class="t"><h1>${esc(p.nombre)}</h1>
     <div class="muted" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><span class="chip">${esc(p.referencia)}</span>${p.marca ? `<span>${esc(p.marca)}</span>` : ''}${p.categoria ? `<span class="chip info">${esc(p.categoria)}</span>` : ''}<span class="chip ${bajo ? 'bad' : 'ok'}">Stock ${p.stock}</span>${of && mg ? `<span class="chip ${mg.pct < 0 ? 'bad' : mg.pct < 15 ? 'warn' : 'ok'}">Margen ${mg.pct.toFixed(0)} % · ${money(mg.eur)}</span>` : ''}</div></div>
-    <div class="actions"><a class="btn" href="${attr(volver)}" data-volver>← Volver</a>${of ? `<a class="btn" href="#/almacen?t=compras&p=${id}">Registrar compra</a><button type="button" class="btn pri" data-ed>Editar pieza</button>` : ''}</div></div>
+    <div class="actions">${botonVolver(volver)}${of ? `<a class="btn" href="#/almacen?t=compras&p=${id}">Registrar compra</a><button type="button" class="btn pri" data-ed>Editar pieza</button>` : ''}</div></div>
   <nav class="tabs">${tabs.map(([k, t]) => `<a href="#/pieza/${id}?t=${k}" class="${k === tab ? 'on' : ''}">${esc(t)}</a>`).join('')}</nav>
   <div data-tab><p class="muted">Cargando…</p></div>`;
   const T = el.querySelector('[data-tab]');

@@ -1,4 +1,4 @@
-import { sb, state, esc, attr, ok, money, fdate, modal, toast, fail, opt, confirmar, formData, field, esAdmin, today, isoDay, PERIODOS, finPeriodo, ultimoCorte } from '../lib.js';
+import { sb, state, esc, attr, ok, money, fdate, modal, toast, fail, opt, confirmar, formData, field, esAdmin, today, isoDay, PERIODOS, finPeriodo, ultimoCorte, volverA, botonVolver } from '../lib.js';
 import { I } from '../icons.js';
 import { renderRemesas } from './remesas.js';
 
@@ -101,8 +101,9 @@ export async function renderFactura(el, params) {
   const titulo = rect ? 'Factura rectificativa' : 'Factura';
   const recargar = () => renderFactura(el, params);
   el.innerHTML = `
-  <div class="head no-print"><div class="t"><div class="muted small"><a href="#/facturacion">Facturación</a> › ${esc(f.numero)}</div><h1>${titulo} ${esc(f.numero)}</h1><div>${chipF(f.estado)}</div></div>
+  <div class="head no-print"><div class="t"><h1>${titulo} ${esc(f.numero)}</h1><div>${chipF(f.estado)}</div></div>
     <div class="actions">
+      ${botonVolver(volverA('factura', id, '#/facturacion'))}
       <button type="button" class="btn" data-print>${I.print} Imprimir / PDF</button>
       ${cli.email ? `<a class="btn" href="mailto:${attr(cli.email)}?subject=${encodeURIComponent(`${titulo} ${f.numero} · ${cfg.nombre_taller}`)}&body=${encodeURIComponent(`Hola ${cli.nombre},\n\nTe enviamos la ${titulo.toLowerCase()} ${f.numero} por importe de ${money(f.total)}${rel && rect ? `, que rectifica la factura ${rel.numero}` : ''}.\n\nGracias por confiar en ${cfg.nombre_taller}.`)}">Enviar por email</a>` : ''}
       ${editable ? '<button type="button" class="btn pri" data-cobrar>Registrar cobro</button>' : ''}

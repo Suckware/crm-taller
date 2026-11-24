@@ -1,4 +1,4 @@
-import { sb, state, esc, attr, ok, fdate, ftime, money, chip, ESTADOS_REP, ESTADOS_CITA, modal, toast, fail, formData, field, area, opt, puedeFacturar, esAdmin, esOficina, confirmar, PERIODOS } from '../lib.js';
+import { sb, state, esc, attr, ok, fdate, ftime, money, chip, ESTADOS_REP, ESTADOS_CITA, modal, toast, fail, formData, field, area, opt, puedeFacturar, esAdmin, esOficina, confirmar, PERIODOS, volverA, botonVolver } from '../lib.js';
 import { formCliente, validarCliente, nuevoCliente, editarVehiculo, alertasVehiculo, cargarVentas, tablaVentas } from './comun.js';
 import { I } from '../icons.js';
 import { ibanValido } from '../sepa.js';
@@ -46,9 +46,9 @@ export async function renderFicha(el, params) {
   const tab = tabs.some(([k]) => k === params.t) ? params.t : 'datos';
   const tarifa = state.tarifas.find((t) => t.id === c.tarifa_id);
   el.innerHTML = `
-  <div class="head"><div class="t"><div class="muted small"><a href="#/clientes">Clientes y proveedores</a> › ficha</div><h1>${esc(c.nombre)}</h1>
+  <div class="head"><div class="t"><h1>${esc(c.nombre)}</h1>
     <div class="muted" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">${rolChips(c)}${c.telefono ? `<a href="tel:${attr(c.telefono)}">${esc(c.telefono)}</a>` : ''}${c.email ? `<a href="mailto:${attr(c.email)}">${esc(c.email)}</a>` : ''}${tarifa ? `<span class="chip">Tarifa ${esc(tarifa.nombre)}</span>` : ''}${Number(c.descuento_pct) ? `<span class="chip ok">Dto. ${Number(c.descuento_pct)} %</span>` : ''}</div></div>
-    ${c.es_cliente ? `<div class="actions"><a class="btn" href="#/cita/nueva?cliente=${id}">${I.agenda} Nueva cita</a><a class="btn pri" href="#/recepcion?cliente=${id}">Recibir moto</a></div>` : ''}</div>
+    <div class="actions">${botonVolver(volverA('cliente', id, '#/clientes'))}${c.es_cliente ? `<a class="btn" href="#/cita/nueva?cliente=${id}">${I.agenda} Nueva cita</a><a class="btn pri" href="#/recepcion?cliente=${id}">Recibir moto</a>` : ''}</div></div>
   ${c.notas_agenda ? `<div class="aviso fila"><b>Nota del cliente</b><span>${esc(c.notas_agenda)}</span></div>` : ''}
   <nav class="tabs">${tabs.map(([k, t]) => `<a href="#/cliente/${id}?t=${k}" class="${k === tab ? 'on' : ''}">${esc(t)}</a>`).join('')}</nav>
   <div data-tab></div>`;

@@ -1,4 +1,4 @@
-import { sb, state, esc, attr, ok, money, fdate, fdt, today, chip, ESTADOS_REP, nombreTecnico, tecnicoOpts, opt, toast, fail, modal, confirmar, puedeFacturar, esOficina, PERIODOS } from '../lib.js';
+import { sb, state, esc, attr, ok, money, fdate, fdt, today, chip, ESTADOS_REP, nombreTecnico, tecnicoOpts, opt, toast, fail, modal, confirmar, puedeFacturar, esOficina, PERIODOS, volverA, botonVolver } from '../lib.js';
 import { CONDICIONES_DEF, firmaPad } from './recepcion.js';
 import { I } from '../icons.js';
 import { avisoNotas, alertasVehiculo, buscadorPiezas } from './comun.js';
@@ -27,10 +27,10 @@ export async function render(el, params) {
 
   el.innerHTML = `
   <div class="head">
-    <div class="t"><div class="muted small"><a href="#/reparaciones">Reparaciones</a> › ${esc(r.numero)}</div>
+    <div class="t">
       <h1>${esc(r.numero)} · ${esc(moto)}</h1>
       <div class="muted">${esc(r.motos?.matricula || '')} · <a href="#/cliente/${r.cliente_id}">${esc(r.clientes.nombre)}</a>${r.clientes.telefono ? ` · <a href="tel:${attr(r.clientes.telefono)}">${esc(r.clientes.telefono)}</a>` : ''}</div></div>
-    <div class="actions" style="align-items:center">${chip(ESTADOS_REP, r.estado)}
+    <div class="actions" style="align-items:center">${botonVolver(volverA('reparacion', id, '#/reparaciones'))}${chip(ESTADOS_REP, r.estado)}
       <select class="inp" data-estado aria-label="Cambiar estado" style="width:auto">${Object.entries(ESTADOS_REP).map(([k, [t]]) => opt(k, t, r.estado)).join('')}</select></div>
   </div>
   <nav class="tabs" aria-label="Secciones de la reparación">${tabs.map(([k, t]) => `<a href="#/reparacion/${id}?t=${k}" class="${k === tab ? 'on' : ''}">${esc(t)}</a>`).join('')}</nav>
