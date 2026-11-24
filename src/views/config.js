@@ -9,12 +9,24 @@ const TEMAS = [
   ['Verde inglés', '#1F5140', '#10241D'], ['Burdeos', '#7A1F2B', '#1F1316'], ['Grafito', '#3F3F46', '#18181B'],
 ];
 
+// Las pestañas se agrupan en apartados para que quepan en cualquier pantalla.
+// Los enlaces siguen siendo #/config?t=<pestaña>, así que los accesos directos de otras pantallas no cambian.
+const GRUPOS = [
+  ['taller', 'Taller', [['taller', 'Datos del taller'], ['apariencia', 'Logo y colores'], ['campos', 'Campos personalizados']]],
+  ['precios', 'Precios e impuestos', [['impuestos', 'Impuestos'], ['tarifas', 'Tarifas']]],
+  ['accesos', 'Usuarios y accesos', [['usuarios', 'Usuarios'], ['roles', 'Roles y ventanas'], ['equipos', 'Equipo del taller']]],
+  ['sistema', 'Licencia y datos', [['licencia', 'Licencia'], ['importar', 'Importar datos']]],
+  ['perfil', 'Mi perfil', [['perfil', 'Mi perfil']]],
+];
+
 export async function render(el, params) {
   const adm = esAdmin();
   const tab = params.t || (adm ? 'taller' : 'perfil');
-  const tabs = adm ? [['taller', 'Datos del taller'], ['apariencia', 'Logo y colores'], ['impuestos', 'Impuestos'], ['tarifas', 'Tarifas'], ['campos', 'Campos personalizados'], ['usuarios', 'Usuarios'], ['roles', 'Roles y ventanas'], ['equipos', 'Equipo del taller'], ['licencia', 'Licencia'], ['importar', 'Importar datos'], ['perfil', 'Mi perfil']] : [['perfil', 'Mi perfil']];
+  const grupos = adm ? GRUPOS : [['perfil', 'Mi perfil', [['perfil', 'Mi perfil']]]];
+  const grupo = grupos.find((g) => g[2].some(([k]) => k === tab)) || grupos[0];
   el.innerHTML = `<div class="head"><div class="t"><h1>Configuración</h1><div class="muted">${adm ? 'Solo el administrador puede cambiar estos ajustes' : 'Los ajustes del taller los gestiona el administrador'}</div></div></div>
-  <nav class="tabs">${tabs.map(([k, t]) => `<a href="#/config?t=${k}" class="${k === tab ? 'on' : ''}">${t}</a>`).join('')}</nav><div data-tab></div>`;
+  ${grupos.length > 1 ? `<nav class="cfg-grupos" aria-label="Apartados de configuración">${grupos.map(([g, t, sub]) => `<a href="#/config?t=${sub[0][0]}" class="${g === grupo[0] ? 'on' : ''}"${g === grupo[0] ? ' aria-current="page"' : ''}>${t}</a>`).join('')}</nav>` : ''}
+  ${grupo[2].length > 1 ? `<nav class="tabs cfg-sub" aria-label="${attr(grupo[1])}">${grupo[2].map(([k, t]) => `<a href="#/config?t=${k}" class="${k === tab ? 'on' : ''}">${t}</a>`).join('')}</nav>` : ''}<div data-tab></div>`;
   const T = el.querySelector('[data-tab]');
   const cfg = state.config;
   const recargar = async () => { await cargarComunes(); render(el, params); };
