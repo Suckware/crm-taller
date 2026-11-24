@@ -59,8 +59,7 @@ begin
   end if;
   return new;
 end $$;
-drop trigger if exists fecha_fin_reparacion on public.reparaciones;
-create trigger fecha_fin_reparacion before insert or update of estado on public.reparaciones
+create or replace trigger fecha_fin_reparacion before insert or update of estado on public.reparaciones
   for each row execute function public.tg_fecha_fin_reparacion();
 
 -- ---------------------------------------------------------------------------
