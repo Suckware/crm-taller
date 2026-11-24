@@ -16,6 +16,8 @@ fn main() {
                 .inner_size(1366.0, 860.0)
                 .min_inner_size(900.0, 600.0)
                 .maximized(true)
+                // Mismo fondo que la pantalla de carga: sin destello blanco al abrir.
+                .background_color(tauri::webview::Color(241, 243, 249, 255))
                 // Enlaces fuera del taller (WhatsApp, correo, mapas…) se abren
                 // en el navegador o programa del equipo, no dentro de la app.
                 .on_navigation(|destino| {

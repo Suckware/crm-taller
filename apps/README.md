@@ -8,6 +8,20 @@ reinstalar nada. No guardan datos en el equipo ni piden permisos extra.
 Los enlaces de WhatsApp, correo y teléfono se abren en el programa del
 equipo (WhatsApp, Outlook…), no dentro de la app.
 
+## Velocidad
+
+- La web guarda en el equipo sus propios archivos (código, estilos, fuentes,
+  iconos) con un *service worker*. Desde la segunda vez, la app arranca sin
+  descargarlos: solo pide a la nube la página principal (para estar siempre
+  en la última versión) y los datos. Si la red tarda más de 3 s, abre con la
+  copia guardada.
+- Los datos del taller (Supabase) nunca se guardan ahí: siempre son los de
+  la nube.
+- La conexión con Supabase se abre en cuanto carga la página (preconnect).
+- Windows: ventana con el mismo fondo que la pantalla de carga (sin destello
+  blanco) y binario optimizado (LTO, tamaño). Android/iOS: sin registro de
+  depuración en la consola.
+
 ## Descargar los instaladores
 
 GitHub › pestaña **Actions** › "Instaladores (Windows, Android, iOS)" ›

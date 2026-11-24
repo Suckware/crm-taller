@@ -15,5 +15,7 @@
   "ios": {
     "contentInset": "never",
     "limitsNavigationsToAppBoundDomains": false
-  }
+  },
+  "loggingBehavior": "none",
+  "backgroundColor": "#F1F3F9"
 }
