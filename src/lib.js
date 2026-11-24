@@ -241,3 +241,19 @@ export async function activarLicencia(codigo) {
   const r = await sb.from('licencia').select('*').eq('id', 1).maybeSingle();
   if (!r.error) state.licencia = r.data;
 }
+
+// ---------- Botón "Volver" de las fichas ----------
+// Lleva a la pantalla desde la que se abrió la ficha (no a la pestaña anterior de la misma ficha).
+// Si se entra directamente (enlace o recarga), vuelve a la lista de su sección.
+// Al llegar pulsando "Volver" no se apunta de dónde venimos, para no quedar dando vueltas entre dos fichas.
+const volverDe = {};
+let porVolver = false;
+document.addEventListener('click', (e) => { if (e.target.closest?.('a[data-volver]')) porVolver = true; }, true);
+export function volverA(ficha, id, defecto) {
+  const propia = `#/${ficha}/${id}`;
+  const a = state.anterior;
+  if (!porVolver && a && a !== propia && !a.startsWith(propia + '?')) volverDe[ficha] = { id, a };
+  porVolver = false;
+  return volverDe[ficha]?.id === id ? volverDe[ficha].a : defecto;
+}
+export const botonVolver = (href) => `<a class="btn" href="${attr(href)}" data-volver>← Volver</a>`;
