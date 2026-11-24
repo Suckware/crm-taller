@@ -2,14 +2,14 @@ import { createClient } from '@supabase/supabase-js';
 
 // Solo la clave pública (publishable). La seguridad la aplica la base de datos con RLS por roles.
 export const SUPABASE_URL = 'https://sxrakoktzmwjmzlmnvts.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_VW3JAL_qNwgqBRPGEkF4CQ_INJjwP51';
+export const SUPABASE_KEY = 'sb_publishable_VW3JAL_qNwgqBRPGEkF4CQ_INJjwP51';
 export const DOMINIO_USUARIOS = 'sergiomotosport.app';
 
 export const sb = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: { persistSession: true, autoRefreshToken: true, storageKey: 'sms-taller-auth' },
 });
 
-export const state = { user: null, perfil: null, config: null, perfiles: [], impuestos: [], tarifas: [], campos: [], licencia: null };
+export const state = { user: null, perfil: null, config: null, perfiles: [], roles: [], impuestos: [], tarifas: [], campos: [], licencia: null };
 
 // ---------- Escapado (evita XSS: todo dato de la BD pasa por aquí) ----------
 export function esc(v) {
@@ -37,13 +37,52 @@ export const ESTADOS_REP = {
   recibida: ['Recibida', 'info'], diagnostico: ['En diagnóstico', 'info'], esperando_aprobacion: ['Esperando aprobación', 'warn'],
   esperando_piezas: ['Esperando piezas', 'warn'], en_reparacion: ['En reparación', 'info'], lista: ['Lista para recoger', 'ok'], entregada: ['Entregada', ''],
 };
+// ---------- Periodicidad de facturación del cliente ----------
+export const PERIODOS = { inmediata: 'en el momento', decenal: 'cada 10 días', quincenal: 'cada 15 días', mensual: 'cada mes' };
+const ultimoDiaMes = (y, m) => new Date(y, m + 1, 0).getDate();
+// Último día del periodo al que pertenece el día ('YYYY-MM-DD')
+export function finPeriodo(dia, periodo) {
+  const [y, m, d] = dia.split('-').map(Number);
+  const u = ultimoDiaMes(y, m - 1);
+  const fin = periodo === 'decenal' ? (d <= 10 ? 10 : d <= 20 ? 20 : u) : periodo === 'quincenal' ? (d <= 15 ? 15 : u) : periodo === 'mensual' ? u : d;
+  return `${y}-${String(m).padStart(2, '0')}-${String(fin).padStart(2, '0')}`;
+}
+// Último día del último periodo ya cerrado antes de hoy (fecha de corte propuesta)
+export function ultimoCorte(periodo, hoy = today()) {
+  if (!periodo || periodo === 'inmediata') return hoy;
+  const ayer = isoDay(new Date(new Date(hoy + 'T12:00:00').getTime() - 86400000));
+  let f = finPeriodo(ayer, periodo);
+  if (f > ayer) { // el periodo de ayer aún no ha terminado: el anterior
+    const [y, m, d] = f.split('-').map(Number);
+    const ini = periodo === 'mensual' ? 1 : periodo === 'quincenal' ? (d === 15 ? 1 : 16) : (d === 10 ? 1 : d === 20 ? 11 : 21);
+    f = isoDay(new Date(y, m - 1, ini - 1, 12));
+  }
+  return f;
+}
+
 export const chip = (map, k) => { const [t, c] = map[k] || [k, '']; return `<span class="chip ${c}">${esc(t)}</span>`; };
 
+// ---------- Roles (Configuración › Roles) ----------
+// Esto solo decide qué se enseña. Lo que se puede leer y guardar lo decide la base de datos.
+export const VENTANAS = [['agenda', 'Agenda'], ['rep', 'Reparaciones y recepción'], ['clientes', 'Clientes y proveedores'], ['almacen', 'Almacén'], ['fact', 'Facturación']];
+export const NIVELES = { admin: 'Administrador: todo', oficina: 'Oficina: cambia precios, stock y factura', taller: 'Taller: consulta el almacén, no factura' };
+export const DISPOSITIVOS = [['acceso_ios', 'iPhone / iPad'], ['acceso_android', 'Android'], ['acceso_windows', 'Windows'], ['acceso_otros', 'Otros (Mac, Linux)']];
 export const rol = () => state.perfil?.rol;
-export const esOficina = () => ['admin', 'recepcion', 'comercial'].includes(rol());
-export const esAdmin = () => rol() === 'admin';
+// Los de serie, por si la base de datos aún no tiene la tabla de roles
+const ROLES_SERIE = [
+  { clave: 'admin', nombre: 'Administrador', nivel: 'admin', ventanas: ['agenda', 'rep', 'clientes', 'almacen', 'fact'], tecnico: true, sistema: true },
+  { clave: 'recepcion', nombre: 'Recepción', nivel: 'oficina', ventanas: ['agenda', 'rep', 'clientes', 'almacen', 'fact'], tecnico: true, sistema: true },
+  { clave: 'comercial', nombre: 'Comercial', nivel: 'oficina', ventanas: ['agenda', 'rep', 'clientes', 'almacen', 'fact'], tecnico: false, sistema: true },
+  { clave: 'mecanico', nombre: 'Mecánico', nivel: 'taller', ventanas: ['agenda', 'rep', 'clientes', 'almacen'], tecnico: true, sistema: true },
+];
+export const rolDe = (clave) => (state.roles.length ? state.roles : ROLES_SERIE).find((r) => r.clave === clave);
+export const nombreRol = (clave) => rolDe(clave)?.nombre || clave || '';
+const nivel = () => rolDe(rol())?.nivel || 'taller';
+export const esOficina = () => ['admin', 'oficina'].includes(nivel());
+export const esAdmin = () => nivel() === 'admin';
+export const puedeVentana = (v) => esAdmin() || !!rolDe(rol())?.ventanas?.includes(v);
 export const esEscritorio = () => window.matchMedia('(min-width: 1101px)').matches;
-export const puedeFacturar = () => esOficina() && esEscritorio();
+export const puedeFacturar = () => esOficina() && esEscritorio() && puedeVentana('fact');
 export const nombreTecnico = (id) => state.perfiles.find((p) => p.id === id)?.nombre || 'Sin asignar';
 export const colorTecnico = (id) => state.perfiles.find((p) => p.id === id)?.color || '#1F3A6E';
 
@@ -111,7 +150,7 @@ export const select = (label, name, options, extra = '') =>
   `<div class="field"><label for="f-${name}">${esc(label)}</label><select id="f-${name}" name="${name}" ${extra}>${options}</select></div>`;
 
 export const tecnicoOpts = (sel, vacio = true) =>
-  (vacio ? opt('', 'Sin asignar', sel ?? '') : '') + state.perfiles.filter((p) => p.activo && p.rol !== 'comercial').map((p) => opt(p.id, p.nombre, sel)).join('');
+  (vacio ? opt('', 'Sin asignar', sel ?? '') : '') + state.perfiles.filter((p) => p.activo && rolDe(p.rol)?.tecnico !== false).map((p) => opt(p.id, p.nombre, sel)).join('');
 
 // Color: valida hex
 export const hex = (c, def) => (/^#[0-9a-f]{6}$/i.test(c || '') ? c : def);
@@ -133,17 +172,19 @@ function mix(a, b, t) {
 }
 
 export async function cargarComunes() {
-  const [c, p, i, t, cp, l] = await Promise.all([
+  const [c, p, i, t, cp, l, r] = await Promise.all([
     sb.from('config').select('*').eq('id', 1).single(),
     sb.from('perfiles').select('*').order('nombre'),
     sb.from('impuestos').select('*').order('id'),
     sb.from('tarifas').select('*').order('id'),
     sb.from('campos_personalizados').select('*').order('orden'),
     sb.from('licencia').select('*').eq('id', 1).maybeSingle(),
+    sb.from('roles').select('*').order('nombre'),
   ]);
   if (c.error) throw c.error;
   state.config = c.data; state.perfiles = p.data || []; state.impuestos = i.data || [];
   state.tarifas = t.data || []; state.campos = cp.data || []; state.licencia = l.data || null;
+  state.roles = r.data || [];
   aplicarTema(state.config);
 }
 
@@ -169,6 +210,7 @@ export const MODULOS_CRM = {
   AGENDA: 'Agenda y citas', CLIENTES: 'Clientes y proveedores', VEHICULOS: 'Vehículos', AUTORIZACION: 'Hoja de autorización',
   REPARACIONES: 'Reparaciones', ALMACEN: 'Almacén', FACTURACION: 'Facturación (ordenador)', APPS: 'Apps Android, iOS y Windows',
   SEDES: 'Varias sedes', INFORMES: 'Informes', RECORDATORIOS: 'Recordatorios ITV y revisión', MEDIDA: 'Logo, colores y campos a medida',
+  AUDITORIA: 'Registro de cambios e informes',
 };
 // Plan según los módulos: Premium si trae alguno de Premium, Profesional si trae alguno de Profesional
 export function licPlan(l = state.licencia) {
@@ -199,3 +241,19 @@ export async function activarLicencia(codigo) {
   const r = await sb.from('licencia').select('*').eq('id', 1).maybeSingle();
   if (!r.error) state.licencia = r.data;
 }
+
+// ---------- Botón "Volver" de las fichas ----------
+// Lleva a la pantalla desde la que se abrió la ficha (no a la pestaña anterior de la misma ficha).
+// Si se entra directamente (enlace o recarga), vuelve a la lista de su sección.
+// Al llegar pulsando "Volver" no se apunta de dónde venimos, para no quedar dando vueltas entre dos fichas.
+const volverDe = {};
+let porVolver = false;
+document.addEventListener('click', (e) => { if (e.target.closest?.('a[data-volver]')) porVolver = true; }, true);
+export function volverA(ficha, id, defecto) {
+  const propia = `#/${ficha}/${id}`;
+  const a = state.anterior;
+  if (!porVolver && a && a !== propia && !a.startsWith(propia + '?')) volverDe[ficha] = { id, a };
+  porVolver = false;
+  return volverDe[ficha]?.id === id ? volverDe[ficha].a : defecto;
+}
+export const botonVolver = (href) => `<a class="btn" href="${attr(href)}" data-volver>← Volver</a>`;

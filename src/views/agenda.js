@@ -1,6 +1,7 @@
 import { sb, state, esc, attr, ok, ftime, fdatel, cap, isoDay, today, chip, ESTADOS_CITA, nombreTecnico, colorTecnico, modal, opt, toast, fail, tecnicoOpts, esEscritorio, confirmar } from '../lib.js';
 import { I } from '../icons.js';
 import { botonesAviso } from '../avisos.js';
+import { pintarAvisoSync } from '../sync.js';
 
 const addDays = (d, n) => { const x = new Date(d + 'T12:00:00'); x.setDate(x.getDate() + n); return isoDay(x); };
 // La semana del taller es de lunes a sábado: el domingo muestra la semana siguiente
@@ -62,7 +63,9 @@ export async function render(el, params) {
     <input class="inp" type="date" value="${attr(d)}" aria-label="Ir a fecha" style="width:auto;min-height:36px" data-fecha>
     <select class="inp" aria-label="Técnico" style="width:auto;min-height:36px" data-tec>${opt('', 'Todo el equipo', tec)}${state.perfiles.filter((p) => p.activo).map((p) => opt(p.id, p.nombre, tec)).join('')}</select>
   </div>
+  <div data-sync></div>
   ${cuerpo}`;
+  pintarAvisoSync(el.querySelector('[data-sync]'), tec ? nombreTecnico(tec) : '');
 
   el.querySelector('[data-fecha]').addEventListener('change', (e) => { if (e.target.value) location.hash = link({ d: e.target.value }); });
   el.querySelector('[data-tec]').addEventListener('change', (e) => { location.hash = '#/agenda?' + new URLSearchParams({ d, v: vista, ...(e.target.value ? { t: e.target.value } : {}) }); });

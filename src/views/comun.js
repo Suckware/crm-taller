@@ -1,4 +1,4 @@
-import { sb, state, esc, attr, ok, modal, toast, formData, req, field, area, opt, fdate, today } from '../lib.js';
+import { sb, state, esc, attr, ok, modal, toast, formData, req, field, area, opt, fdate, today, money, chip, ESTADOS_REP, puedeFacturar, fail } from '../lib.js';
 
 const limpiar = (s) => (s || '').replace(/[%,()*]/g, ' ').trim();
 
@@ -289,3 +289,90 @@ export async function editarVehiculo(m, cb) {
 // Compatibilidad
 export const nuevaMoto = (clienteId, cb, m = null) => editarVehiculo(m || { cliente_id: clienteId }, cb);
 export { attr };
+
+// ---------- Histórico de ventas de piezas ----------
+// Cada pieza montada o vendida en una orden (reparacion_piezas), con su cliente, vehículo,
+// orden y, si ya está facturada, la factura. Sirve tanto para la ficha de la pieza como para la del cliente.
+export async function cargarVentas({ pieza, cliente }) {
+  let q = sb.from('reparacion_piezas')
+    .select('id,cantidad,pvp,created_at,pieza_id,piezas(id,referencia,nombre),reparaciones!inner(id,numero,estado,fecha_entrada,fecha_fin,cliente_id,clientes(id,nombre),motos(marca,modelo,matricula))')
+    .order('created_at', { ascending: false }).limit(1000);
+  if (pieza) q = q.eq('pieza_id', pieza);
+  if (cliente) q = q.eq('reparaciones.cliente_id', cliente);
+  const V = ok(await q);
+  const fact = {};
+  if (puedeFacturar() && V.length) {
+    const ids = [...new Set(V.map((v) => v.reparaciones.id))];
+    const [a, b] = await Promise.all([
+      sb.from('facturas').select('id,numero,fecha,estado,tipo,reparacion_id').in('reparacion_id', ids),
+      sb.from('factura_reparaciones').select('reparacion_id,facturas(id,numero,fecha,estado,tipo)').in('reparacion_id', ids),
+    ]);
+    const todas = [...ok(a), ...ok(b).map((x) => ({ ...x.facturas, reparacion_id: x.reparacion_id }))].filter((f) => f.id && f.tipo !== 'rectificativa');
+    // Si hay varias, vale la que no está anulada
+    for (const f of todas) { const y = fact[f.reparacion_id]; if (!y || (y.estado === 'anulada' && f.estado !== 'anulada')) fact[f.reparacion_id] = f; }
+  }
+  return V.map((v) => ({ ...v, factura: fact[v.reparaciones.id] || null }));
+}
+
+export function tablaVentas(T, V, { porPieza }) {
+  const clientes = new Set(V.map((v) => v.reparaciones.cliente_id)).size;
+  const uds = V.reduce((s, v) => s + v.cantidad, 0);
+  const importe = V.reduce((s, v) => s + v.cantidad * v.pvp, 0);
+  const fac = puedeFacturar();
+  T.innerHTML = `
+  <div class="kpis"><div class="kpi"><span class="l">Unidades vendidas</span><span class="v">${uds}</span></div>
+    <div class="kpi"><span class="l">${porPieza ? 'Clientes distintos' : 'Piezas distintas'}</span><span class="v">${porPieza ? clientes : new Set(V.map((v) => v.pieza_id)).size}</span></div>
+    <div class="kpi"><span class="l">Importe (PVP)</span><span class="v">${money(importe)}</span></div></div>
+  <div class="agenda-bar"><input type="search" class="search" data-qv placeholder="${porPieza ? 'Buscar por cliente, matrícula, moto u orden…' : 'Buscar por pieza, referencia, matrícula u orden…'}" aria-label="Buscar en el histórico"></div>
+  <section class="card"><div class="tablewrap"><table>
+    <thead><tr><th class="hide-movil">Fecha</th><th>${porPieza ? 'Cliente' : 'Pieza'}</th><th class="hide-movil">Vehículo</th><th>Orden${fac ? ' / factura' : ''}</th><th class="right">Cant.</th><th class="right hide-movil">Precio</th><th class="right">Total</th></tr></thead>
+    <tbody>${V.map((v) => { const r = v.reparaciones, m = r.motos, f = v.factura;
+      const moto = m ? `${m.marca} ${m.modelo}${m.matricula ? ' · ' + m.matricula : ''}` : '';
+      return `<tr data-txt="${attr(`${r.clientes?.nombre || ''} ${v.piezas?.nombre || ''} ${v.piezas?.referencia || ''} ${moto} ${r.numero} ${f?.numero || ''}`.toLowerCase())}">
+      <td class="small hide-movil">${fdate(v.created_at)}</td>
+      <td>${porPieza ? `<a href="#/cliente/${r.cliente_id}"><b>${esc(r.clientes?.nombre || '—')}</b></a>` : `<a href="#/pieza/${v.pieza_id}"><b>${esc(v.piezas?.nombre || '—')}</b></a><div class="small muted">${esc(v.piezas?.referencia || '')}</div>`}
+        <div class="small muted show-movil">${fdate(v.created_at)}${moto ? ' · ' + esc(moto) : ''}</div></td>
+      <td class="hide-movil small">${esc(moto)}</td>
+      <td><a href="#/reparacion/${r.id}" style="white-space:nowrap">${esc(r.numero)}</a> ${chip(ESTADOS_REP, r.estado)}${fac ? `<div class="small">${f ? `<a href="#/factura/${f.id}">Factura ${esc(f.numero)}</a>${f.estado === 'anulada' ? ' <span class="chip bad">anulada</span>' : ''}` : '<span class="muted">Sin facturar</span>'}</div>` : ''}</td>
+      <td class="right num"><b>${v.cantidad}</b></td><td class="right num hide-movil">${money(v.pvp)}</td><td class="right num">${money(v.cantidad * v.pvp)}</td></tr>`; }).join('') || `<tr><td colspan="7" class="empty">${porPieza ? 'Esta pieza aún no se ha vendido ni montado a ningún cliente' : 'Este cliente aún no tiene piezas'}</td></tr>`}</tbody>
+  </table></div></section>`;
+  const q = T.querySelector('[data-qv]');
+  q.addEventListener('input', () => { const s = q.value.toLowerCase().trim(); T.querySelectorAll('tr[data-txt]').forEach((tr) => { tr.style.display = !s || tr.dataset.txt.includes(s) ? '' : 'none'; }); });
+}
+
+// ---------- Buscador de piezas (nombre, referencia, marca o código de barras) ----------
+// Busca en la base de datos según se escribe, así va rápido aunque haya miles de piezas.
+// Con lector de código de barras: el lector escribe el código y pulsa Intro; si coincide
+// exactamente con un código de barras o una referencia, se elige la pieza directamente.
+export const SEL_PIEZA_BUSCAR = 'id,referencia,nombre,marca,codigo_barras,stock,stock_minimo,pvp,precio_compra,proveedor_id,ubicacion';
+const limpiarBusqueda = (s) => (s || '').replace(/[%,()*"\\]/g, ' ').trim().slice(0, 60);
+
+export function buscadorPiezas(cont, { onPick, fila, placeholder } = {}) {
+  cont.innerHTML = `<div class="buscador-pieza">
+    <input type="search" class="inp" data-bq placeholder="${attr(placeholder || 'Buscar por nombre, referencia o código de barras…')}" aria-label="Buscar pieza" maxlength="60" autocomplete="off" enterkeyhint="search">
+    <div class="muted small" data-bmsg>Escribe o pasa el lector de código de barras.</div>
+    <div class="list" data-bres></div></div>`;
+  const inp = cont.querySelector('[data-bq]'), res = cont.querySelector('[data-bres]'), msg = cont.querySelector('[data-bmsg]');
+  let P = [], turno = 0, t;
+  const pintar = () => {
+    res.innerHTML = P.map((p) => fila ? fila(p) : `<button type="button" class="pick" data-pick="${p.id}"><span class="grow"><b>${esc(p.nombre)}</b><span class="muted small">${esc(p.referencia)}${p.codigo_barras ? ' · ' + esc(p.codigo_barras) : ''}${p.ubicacion ? ' · ' + esc(p.ubicacion) : ''}</span></span><b style="color:${p.stock > 0 ? 'var(--ok)' : 'var(--bad)'}">stock ${p.stock}</b></button>`).join('');
+    res.querySelectorAll('[data-pick]').forEach((b) => b.addEventListener('click', () => onPick?.(P.find((x) => x.id == b.dataset.pick), b)));
+  };
+  async function buscar(exacto) {
+    const s = limpiarBusqueda(inp.value), my = ++turno;
+    if (!s) { P = []; pintar(); msg.textContent = 'Escribe o pasa el lector de código de barras.'; return; }
+    if (exacto) {
+      const E = ok(await sb.from('piezas').select(SEL_PIEZA_BUSCAR).or(`codigo_barras.eq.${s},referencia.eq.${s.toUpperCase()}`).limit(2));
+      if (my !== turno) return;
+      if (E.length === 1) { P = E; pintar(); msg.textContent = 'Encontrada por código.'; onPick?.(E[0], null, true); return; }
+    }
+    const R = ok(await sb.from('piezas').select(SEL_PIEZA_BUSCAR).or(`nombre.ilike.%${s}%,referencia.ilike.%${s}%,marca.ilike.%${s}%,codigo_barras.ilike.%${s}%`).order('nombre').limit(25));
+    if (my !== turno) return;
+    P = R; pintar();
+    msg.textContent = R.length ? (R.length === 25 ? 'Se muestran las 25 primeras: afina la búsqueda.' : `${R.length} encontradas.`) : 'No hay ninguna pieza con ese nombre, referencia o código.';
+  }
+  inp.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => buscar(false).catch(fail), 220); });
+  inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); clearTimeout(t); buscar(true).catch(fail); } });
+  setTimeout(() => inp.focus(), 50);
+  return { ocultar: () => { P = []; pintar(); msg.textContent = ''; }, limpiar: () => { inp.value = ''; P = []; pintar(); msg.textContent = 'Escribe o pasa el lector de código de barras.'; inp.focus(); }, recargar: () => buscar(false).catch(fail), input: inp };
+}

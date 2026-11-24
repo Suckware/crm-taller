@@ -1,7 +1,7 @@
-import { sb, state, esc, attr, ok, money, fdate, fdt, today, chip, ESTADOS_REP, nombreTecnico, tecnicoOpts, opt, toast, fail, modal, confirmar, puedeFacturar, esOficina } from '../lib.js';
+import { sb, state, esc, attr, ok, money, fdate, fdt, today, chip, ESTADOS_REP, nombreTecnico, tecnicoOpts, opt, toast, fail, modal, confirmar, puedeFacturar, esOficina, PERIODOS, volverA, botonVolver } from '../lib.js';
 import { CONDICIONES_DEF, firmaPad } from './recepcion.js';
 import { I } from '../icons.js';
-import { avisoNotas, alertasVehiculo } from './comun.js';
+import { avisoNotas, alertasVehiculo, buscadorPiezas } from './comun.js';
 
 const firmaOk = (f) => typeof f === 'string' && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(f);
 
@@ -12,9 +12,10 @@ export async function render(el, params) {
     sb.from('reparaciones').select('*,clientes(*),motos(*)').eq('id', id).single(),
     sb.from('reparacion_piezas').select('*,piezas(referencia,nombre)').eq('reparacion_id', id).order('id'),
     sb.from('reparacion_horas').select('*').eq('reparacion_id', id).order('fecha'),
-    puedeFacturar() ? sb.from('facturas').select('id,numero,total,estado').eq('reparacion_id', id).neq('estado', 'anulada') : Promise.resolve({ data: [] }),
+    puedeFacturar() ? sb.from('factura_reparaciones').select('facturas(id,numero,total,estado,tipo)').eq('reparacion_id', id) : Promise.resolve({ data: [] }),
   ]);
-  const r = ok(rq), piezas = ok(pq), horas = ok(hq), facts = ok(fq);
+  const r = ok(rq), piezas = ok(pq), horas = ok(hq);
+  const facts = ok(fq).map((x) => x.facturas).filter((f) => f && f.tipo === 'ordinaria' && f.estado !== 'anulada');
   const totPiezas = piezas.reduce((s, p) => s + p.cantidad * p.pvp, 0);
   const totHoras = horas.reduce((s, h) => s + h.horas * h.precio_hora, 0);
   const numHoras = horas.reduce((s, h) => s + Number(h.horas), 0);
@@ -26,10 +27,10 @@ export async function render(el, params) {
 
   el.innerHTML = `
   <div class="head">
-    <div class="t"><div class="muted small"><a href="#/reparaciones">Reparaciones</a> › ${esc(r.numero)}</div>
+    <div class="t">
       <h1>${esc(r.numero)} · ${esc(moto)}</h1>
       <div class="muted">${esc(r.motos?.matricula || '')} · <a href="#/cliente/${r.cliente_id}">${esc(r.clientes.nombre)}</a>${r.clientes.telefono ? ` · <a href="tel:${attr(r.clientes.telefono)}">${esc(r.clientes.telefono)}</a>` : ''}</div></div>
-    <div class="actions" style="align-items:center">${chip(ESTADOS_REP, r.estado)}
+    <div class="actions" style="align-items:center">${botonVolver(volverA('reparacion', id, '#/reparaciones'))}${chip(ESTADOS_REP, r.estado)}
       <select class="inp" data-estado aria-label="Cambiar estado" style="width:auto">${Object.entries(ESTADOS_REP).map(([k, [t]]) => opt(k, t, r.estado)).join('')}</select></div>
   </div>
   <nav class="tabs" aria-label="Secciones de la reparación">${tabs.map(([k, t]) => `<a href="#/reparacion/${id}?t=${k}" class="${k === tab ? 'on' : ''}">${esc(t)}</a>`).join('')}</nav>
@@ -133,7 +134,7 @@ export async function render(el, params) {
       <div class="head"><h2>Piezas usadas</h2><button type="button" class="btn pri" data-add>${I.plus} Añadir pieza del almacén</button></div>
       <p class="muted small" style="margin:0">Al añadir una pieza se descuenta del stock. Si la quitas, vuelve al almacén.</p>
       <div class="tablewrap"><table><thead><tr><th class="hide-movil">Ref.</th><th>Pieza</th><th class="right">Cant.</th><th class="right">PVP</th><th class="right">Importe</th><th></th></tr></thead><tbody>
-      ${piezas.map((p) => `<tr><td class="small hide-movil">${esc(p.piezas.referencia)}</td><td>${esc(p.piezas.nombre)}<div class="small muted">${esc(p.piezas.referencia)}</div></td><td class="right num">${p.cantidad}</td><td class="right num">${money(p.pvp)}</td><td class="right num">${money(p.cantidad * p.pvp)}</td><td class="right"><button type="button" class="btn sm danger" data-del="${p.id}">Quitar</button></td></tr>`).join('') || '<tr><td colspan="6" class="empty">Sin piezas</td></tr>'}
+      ${piezas.map((p) => `<tr><td class="small hide-movil">${esc(p.piezas.referencia)}</td><td><a href="#/pieza/${p.pieza_id}">${esc(p.piezas.nombre)}</a><div class="small muted">${esc(p.piezas.referencia)}</div></td><td class="right num">${p.cantidad}</td><td class="right num">${money(p.pvp)}</td><td class="right num">${money(p.cantidad * p.pvp)}</td><td class="right"><button type="button" class="btn sm danger" data-del="${p.id}">Quitar</button></td></tr>`).join('') || '<tr><td colspan="6" class="empty">Sin piezas</td></tr>'}
       </tbody><tfoot><tr><td class="hide-movil"></td><td colspan="3" class="right">Total piezas</td><td class="right num">${money(totPiezas)}</td><td></td></tr></tfoot></table></div></section>`;
     T.querySelector('[data-add]').addEventListener('click', () => anadirPieza(id, recargar));
     T.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', async () => {
@@ -163,6 +164,7 @@ export async function render(el, params) {
     const def = state.impuestos.find((i) => i.por_defecto) || state.impuestos[0];
     T.innerHTML = f ? `<section class="card"><h2>Factura ${esc(f.numero)}</h2><p style="margin:0">Total ${money(f.total)} · ${f.estado === 'cobrada' ? '<span class="chip ok">Cobrada</span>' : '<span class="chip warn">Pendiente de cobro</span>'}</p><a class="btn pri" href="#/factura/${f.id}" style="align-self:flex-start">Abrir factura</a></section>`
       : `<section class="card"><h2>Facturar esta reparación</h2>
+        ${r.clientes?.periodo_facturacion && r.clientes.periodo_facturacion !== 'inmediata' ? `<p class="aviso" style="margin:0">Este cliente se factura <b>${esc(PERIODOS[r.clientes.periodo_facturacion])}</b>. Si no la facturas ahora, la orden queda como albarán y entra sola en su factura del periodo (Facturación › Pendientes de facturar).</p>` : ''}
         <p class="muted" style="margin:0">Se creará la factura con ${horas.length} líneas de mano de obra y ${piezas.length} de piezas. Base: <b>${money(totPiezas + totHoras)}</b>.</p>
         <div class="field" style="max-width:320px"><label for="f-imp">Impuesto</label><select id="f-imp" class="inp">${state.impuestos.filter((i) => i.activo).map((i) => opt(i.id, `${i.nombre} ${Number(i.porcentaje).toLocaleString('es-ES')} %`, def?.id)).join('')}</select></div>
         <button type="button" class="btn pri" data-fact style="align-self:flex-start" ${totPiezas + totHoras <= 0 ? 'disabled' : ''}>Crear factura</button>
@@ -178,28 +180,25 @@ export async function render(el, params) {
 }
 
 async function anadirPieza(repId, recargar) {
-  const m = modal('Añadir pieza del almacén', `
-    <input type="search" class="inp" placeholder="Buscar por nombre o referencia…" data-q aria-label="Buscar pieza" maxlength="60">
-    <div class="list" data-res style="margin-top:10px"></div>`, {});
-  const res = m.querySelector('[data-res]');
-  async function buscar(s) {
-    s = s.replace(/[%,()*]/g, ' ').trim();
-    let q = sb.from('piezas').select('id,referencia,nombre,stock,pvp,ubicacion').order('nombre').limit(25);
-    if (s) q = q.or(`nombre.ilike.%${s}%,referencia.ilike.%${s}%,marca.ilike.%${s}%`);
-    const P = (await q).data || [];
-    res.innerHTML = P.map((p) => `<div><span class="grow"><b>${esc(p.nombre)}</b><span class="muted small">${esc(p.referencia)} · ${money(p.pvp)} · ${p.ubicacion ? esc(p.ubicacion) + ' · ' : ''}<b style="color:${p.stock > 0 ? 'var(--ok)' : 'var(--bad)'}">stock ${p.stock}</b></span></span>
-      <input type="number" class="inp" value="1" min="1" max="${Math.max(p.stock, 1)}" style="width:70px" aria-label="Cantidad" data-cant="${p.id}">
-      <button type="button" class="btn sm pri" data-pick="${p.id}" ${p.stock <= 0 ? 'disabled' : ''}>Añadir</button></div>`).join('') || '<div class="empty">Sin resultados</div>';
-    res.querySelectorAll('[data-pick]').forEach((b) => b.addEventListener('click', async () => {
-      const p = P.find((x) => x.id == b.dataset.pick);
-      const cant = Math.floor(Number(res.querySelector(`[data-cant="${p.id}"]`).value) || 1);
-      if (cant < 1 || cant > p.stock) { toast(`Solo hay ${p.stock} en stock`, true); return; }
-      b.disabled = true;
-      try { ok(await sb.from('reparacion_piezas').insert({ reparacion_id: repId, pieza_id: p.id, cantidad: cant, pvp: p.pvp })); m.remove(); toast(`${p.nombre}: descontado del stock`); recargar('piezas'); } catch (e) { fail(e); b.disabled = false; }
-    }));
+  const m = modal('Añadir pieza del almacén', '<div data-buscador></div>', {});
+  const fila = (p) => `<div><span class="grow"><b>${esc(p.nombre)}</b><span class="muted small">${esc(p.referencia)}${p.codigo_barras ? ' · ' + esc(p.codigo_barras) : ''} · ${money(p.pvp)} · ${p.ubicacion ? esc(p.ubicacion) + ' · ' : ''}<b style="color:${p.stock > 0 ? 'var(--ok)' : 'var(--bad)'}">stock ${p.stock}</b></span></span>
+      <input type="number" class="inp" value="1" min="1" max="${Math.max(p.stock, 1)}" style="width:70px" aria-label="Cantidad" data-cant="${p.id}" inputmode="numeric">
+      <button type="button" class="btn sm pri" data-add="${p.id}" ${p.stock <= 0 ? 'disabled' : ''}>Añadir</button></div>`;
+  const cont = m.querySelector('[data-buscador]');
+  const vistos = {};
+  async function anadir(p, b) {
+    const cant = Math.floor(Number(cont.querySelector(`[data-cant="${p.id}"]`)?.value) || 1);
+    if (cant < 1 || cant > p.stock) { toast(`Solo hay ${p.stock} en stock`, true); return; }
+    if (b) b.disabled = true;
+    try { ok(await sb.from('reparacion_piezas').insert({ reparacion_id: repId, pieza_id: p.id, cantidad: cant, pvp: p.pvp })); m.remove(); toast(`${p.nombre}: descontado del stock`); recargar('piezas'); } catch (e) { fail(e); if (b) b.disabled = false; }
   }
-  let t; m.querySelector('[data-q]').addEventListener('input', (e) => { clearTimeout(t); t = setTimeout(() => buscar(e.target.value), 250); });
-  buscar('');
+  // Con el lector (coincidencia exacta) se pasa directamente a la cantidad: Intro añade la pieza
+  buscadorPiezas(cont, {
+    fila: (p) => { vistos[p.id] = p; return fila(p); },
+    onPick: (p) => { vistos[p.id] = p; setTimeout(() => { const c = cont.querySelector(`[data-cant="${p.id}"]`); c?.focus(); c?.select(); }, 0); },
+  });
+  cont.addEventListener('click', (e) => { const b = e.target.closest('[data-add]'); if (b) anadir(vistos[b.dataset.add], b); });
+  cont.addEventListener('keydown', (e) => { const c = e.target.closest('[data-cant]'); if (c && e.key === 'Enter') { e.preventDefault(); anadir(vistos[c.dataset.cant], cont.querySelector(`[data-add="${c.dataset.cant}"]`)); } });
 }
 
 function apuntarHoras(repId, r, recargar) {
