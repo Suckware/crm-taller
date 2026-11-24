@@ -7,6 +7,7 @@ import './styles.css';
 import { sb, state, esc, attr, toast, cargarComunes, DOMINIO_USUARIOS, puedeFacturar, esAdmin, puedeVentana, nombreRol, licEstado, tieneModulo, refrescarLicencia, fdate } from './lib.js';
 import { I } from './icons.js';
 import { activarCodigoPostal } from './cp.js';
+import { iniciarLatido, pararLatido, avisarCierre } from './sync.js';
 import * as panel from './views/panel.js';
 import * as agenda from './views/agenda.js';
 import * as cita from './views/cita.js';
@@ -120,6 +121,7 @@ function avisoLicencia() {
 }
 
 async function salir() {
+  await avisarCierre(); pararLatido(); // el equipo del taller se cierra bien: nadie verá el aviso amarillo
   try { await sb.rpc('liberar_sesion'); } catch { /* sin conexión: caducará sola */ } // el usuario queda libre para otro dispositivo al momento
   await sb.auth.signOut();
   state.user = state.perfil = null;
@@ -357,6 +359,7 @@ async function arrancar(session) {
   try { await cargarComunes(); } catch (e) { renderLogin('No se ha podido conectar. Inténtalo de nuevo.'); return; }
   route();
   vigilarSesion();
+  iniciarLatido(); // solo hace algo si este ordenador es el equipo del taller
   // Una vez al entrar (como mucho cada 6 h) se pregunta a la consola cómo está la licencia
   const antes = JSON.stringify(state.licencia);
   refrescarLicencia().then(() => { if (JSON.stringify(state.licencia) !== antes) route(); }).catch((e) => console.warn(e));
@@ -375,3 +378,17 @@ sb.auth.onAuthStateChange((ev) => {
 })();
 
 activarCodigoPostal();
+
+// Aviso en cualquier dispositivo cuando se queda sin internet
+function avisoRed() {
+  let b = document.getElementById('sin-red');
+  if (navigator.onLine) { b?.remove(); return; }
+  if (!b) {
+    b = document.createElement('div'); b.id = 'sin-red'; b.setAttribute('role', 'status');
+    b.textContent = 'Sin conexión a internet. Lo que guardes ahora puede fallar: espera a que vuelva la conexión.';
+    document.body.append(b);
+  }
+}
+addEventListener('online', avisoRed);
+addEventListener('offline', avisoRed);
+avisoRed();

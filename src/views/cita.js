@@ -1,6 +1,7 @@
 import { sb, state, esc, attr, ok, today, isoDay, fdatel, ftime, tecnicoOpts, opt, toast, fail, nombreTecnico } from '../lib.js';
 import { selectorClienteMoto } from './comun.js';
 import { botonesAviso } from '../avisos.js';
+import { pintarAvisoSync } from '../sync.js';
 
 const SERVICIOS = [
   ['Revisión / mantenimiento', 60], ['Diagnóstico', 60], ['Recepción de moto', 30], ['Cambio de neumáticos', 45],
@@ -21,6 +22,7 @@ export async function render(el, params) {
         <div class="field"><label for="n-fecha">Día</label><input id="n-fecha" type="date" class="inp" value="${attr(st.fecha)}" min="${today()}"></div>
         <div class="field"><label for="n-dur">Duración (min)</label><input id="n-dur" type="number" class="inp" min="10" max="600" step="5" value="${st.dur}"></div>
       </div>
+      <div data-sync></div>
       <div class="lbl" data-dia></div>
       <div class="slots" data-slots></div>
       <div class="field"><label for="n-notas">Notas para el taller</label><textarea id="n-notas" class="inp" maxlength="1000" placeholder="Ej.: ruido en la transmisión, trae neumáticos propios…"></textarea></div>
@@ -39,6 +41,7 @@ export async function render(el, params) {
 
   async function slots() {
     $('[data-dia]').textContent = st.fecha ? fdatel(st.fecha + 'T12:00:00') : '';
+    pintarAvisoSync($('[data-sync]'), st.tecnico ? nombreTecnico(st.tecnico) : '');
     const box = $('[data-slots]');
     if (!st.fecha) { box.innerHTML = ''; return; }
     const d = new Date(st.fecha + 'T00:00:00'); const d1 = new Date(d); d1.setDate(d1.getDate() + 1);
