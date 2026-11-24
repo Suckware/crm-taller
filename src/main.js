@@ -17,6 +17,7 @@ import * as clientes from './views/clientes.js';
 import * as almacen from './views/almacen.js';
 import * as facturacion from './views/facturacion.js';
 import * as config from './views/config.js';
+import * as registro from './views/registro.js';
 
 const app = document.getElementById('app');
 
@@ -37,6 +38,7 @@ const ROUTES = [
   [/^\/facturacion$/, facturacion.render, 'fact'],
   [/^\/factura\/(\d+)$/, facturacion.renderFactura, 'fact'],
   [/^\/config$/, config.render, 'config'],
+  [/^\/registro$/, registro.render, 'registro'],
 ];
 
 function navItems() {
@@ -48,6 +50,7 @@ function navItems() {
     ['#/almacen', 'almacen', 'Almacén', I.almacen],
   ];
   if (puedeFacturar()) items.push(['#/facturacion', 'fact', 'Facturación', I.fact]);
+  if (esAdmin()) items.push(['#/registro', 'registro', 'Registro de cambios', I.registro]);
   items.push(['#/config', 'config', 'Configuración', I.config]);
   return items.filter(([, k]) => permitido(k));
 }
@@ -136,6 +139,7 @@ async function route() {
   if (!hit) { location.hash = '#/'; return; }
   const [re, fn, active] = hit;
   if (active === 'fact' && !puedeFacturar()) { location.hash = '#/'; return; }
+  if (active === 'registro' && !esAdmin()) { location.hash = '#/'; return; }
   if (!permitido(active)) { location.hash = '#/'; return; }
   const m = path.match(re);
   const view = shell(active);

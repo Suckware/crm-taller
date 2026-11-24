@@ -30,3 +30,12 @@ Configuración › **Importar datos** (solo administrador). Sirve para implantar
 - El código de cada cliente en el programa anterior se guarda como `Código anterior` para enlazar después vehículos, compras y facturas.
 - Las referencias de artículos se guardan en mayúsculas, igual que al crearlas a mano.
 - Todo pasa por las mismas reglas RLS que el resto de la app: no hace falta ningún cambio en la base de datos.
+
+## Registro de cambios (solo administrador)
+
+Menú **Registro de cambios**: quién ha dado de alta, cambiado o borrado qué y cuándo (citas, líneas de factura, piezas y horas de las órdenes, precios, clientes, vehículos, usuarios, configuración…). Informes en pestañas: citas cambiadas, líneas borradas, líneas cambiadas y precios cambiados, con filtros por fechas, usuario y texto, y descarga para Excel.
+
+- Lo apunta la base de datos con disparadores (`supabase/migrations/20261124100000_registro_cambios.sql`): no se puede saltar desde la app.
+- No se puede modificar ni borrar: nadie tiene permiso de escritura sobre `registro_cambios` y un disparador rechaza UPDATE, DELETE y TRUNCATE.
+- Solo lo lee el administrador. Con licencia activada, además hace falta el módulo `AUDITORIA` (se apunta igual aunque no lo tenga).
+- De los datos bancarios solo se apunta qué campo cambió, no su valor.
