@@ -51,7 +51,7 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      - uses: android-actions/setup-android@v3
+      # El SDK de Android ya viene instalado en ubuntu-latest (ANDROID_HOME).
       - run: npm ci
       - run: npm run preparar:android
       - name: Compilar APK de pruebas
