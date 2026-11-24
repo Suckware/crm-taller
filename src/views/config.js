@@ -21,11 +21,20 @@ export async function render(el, params) {
     const p = state.perfil;
     T.innerHTML = `<section class="card" style="max-width:640px"><h2>${esc(p.nombre)}</h2>
       <p style="margin:0">Usuario: <b>${esc(p.usuario)}</b> · Rol: <b>${esc({ admin: 'Administrador', recepcion: 'Recepción', comercial: 'Comercial', mecanico: 'Mecánico' }[p.rol])}</b></p>
+      <h3>Correo para recuperar la contraseña</h3>
+      <div class="form"><div class="field full"><label for="micorreo">Mi correo</label><input id="micorreo" type="email" autocomplete="email" maxlength="120" placeholder="nombre@correo.com"></div></div>
+      <p class="muted small" style="margin:0">Si olvidas la contraseña, te llegará aquí un enlace para poner una nueva. Solo lo ves tú y el administrador.</p>
+      <button type="button" class="btn" data-correo style="align-self:flex-start">Guardar correo</button>
       <h3>Cambiar mi contraseña</h3>
       <div class="form"><div class="field"><label for="pw1">Nueva contraseña</label><input id="pw1" type="password" autocomplete="new-password" minlength="10" maxlength="128"></div>
       <div class="field"><label for="pw2">Repetir</label><input id="pw2" type="password" autocomplete="new-password" maxlength="128"></div></div>
       <p class="muted small" style="margin:0">Mínimo 10 caracteres, con mayúsculas, minúsculas y números.</p>
       <button type="button" class="btn pri" data-pw style="align-self:flex-start">Cambiar contraseña</button></section>`;
+    const inpC = T.querySelector('#micorreo');
+    sb.from('usuarios_correo').select('correo').eq('user_id', p.id).maybeSingle().then(({ data }) => { if (data) inpC.value = data.correo; });
+    T.querySelector('[data-correo]').addEventListener('click', async () => {
+      try { await guardarCorreo(p.id, inpC.value); toast('Correo guardado'); } catch (e) { fail(e); }
+    });
     T.querySelector('[data-pw]').addEventListener('click', async () => {
       const a = T.querySelector('#pw1').value, b = T.querySelector('#pw2').value;
       if (a !== b) return toast('Las contraseñas no coinciden', true);
@@ -110,7 +119,7 @@ export async function render(el, params) {
     const Tt = ok(await sb.from('tarifas').select('*').order('id'));
     T.innerHTML = `<section class="card" style="max-width:860px"><div class="head"><h2>Tipos de tarifa</h2><button type="button" class="btn pri" data-n>+ Nueva tarifa</button></div>
       <p class="muted small" style="margin:0">Cada cliente puede tener una tarifa. Su descuento se aplica solo al facturar (si el cliente no tiene descuento fijo propio) y su precio por hora se propone al apuntar horas.</p>
-      <div class="tablewrap"><table><thead><tr><th>Tarifa</th><th class="right">Descuento</th><th class="right">Precio hora</th><th>Estado</th><th></th></tr></thead><tbody>
+      <div class="tablewrap"><table><thead><tr><th>Tarifa</th><th class="right">Descuento</th><th class="right">Precio hora</th><th>Estado</th><th>Conectado</th><th></th></tr></thead><tbody>
       ${Tt.map((t) => `<tr><td><b>${esc(t.nombre)}</b>${t.notas ? `<div class="small muted">${esc(t.notas)}</div>` : ''}</td><td class="right num">${Number(t.descuento_pct)} %</td><td class="right num">${t.precio_hora != null ? money(t.precio_hora) : 'Del mecánico'}</td><td>${t.activa ? '<span class="chip ok">Activa</span>' : '<span class="chip">Inactiva</span>'}</td><td class="right"><button type="button" class="btn sm" data-e="${t.id}">Editar</button></td></tr>`).join('')}
       </tbody></table></div></section>`;
     const editar = (t = {}) => modal(t.id ? 'Editar tarifa' : 'Nueva tarifa', `<div class="form">${field('Nombre', 'nombre', t.nombre, 'text', 'maxlength="60"')}${field('Descuento (%)', 'descuento_pct', t.descuento_pct ?? 0, 'number', 'min="0" max="100" step="0.5"')}${field('Precio por hora (€, opcional)', 'precio_hora', t.precio_hora, 'number', 'min="0" step="0.5"')}${area('Notas', 'notas', t.notas, 'maxlength="300"')}<label class="check full"><input type="checkbox" name="activa" ${t.activa ?? true ? 'checked' : ''}> Activa</label></div>`, {
@@ -185,15 +194,32 @@ export async function render(el, params) {
 
   if (tab === 'usuarios') {
     const P = ok(await sb.from('perfiles').select('*').order('nombre'));
+    const correos = Object.fromEntries(ok(await sb.from('usuarios_correo').select('user_id, correo')).map((c) => [c.user_id, c.correo]));
+    const ses = Object.fromEntries(ok(await sb.rpc('sesiones_abiertas')).map((x) => [x.user_id, x]));
+    const conectado = (p) => {
+      const x = ses[p.id];
+      if (!x || !x.activa) return '<span class="muted small">No</span>';
+      return `<span class="chip ok">${esc(x.dispositivo || 'Conectado')}</span><div class="muted small">desde ${esc(fdt(x.desde))}</div>`
+        + (p.id === state.perfil.id ? '' : `<button type="button" class="btn sm" data-cerrar="${attr(p.id)}" style="margin-top:4px">Cerrar sesión</button>`);
+    };
     const rolT = { admin: 'Administrador', recepcion: 'Recepción', comercial: 'Comercial', mecanico: 'Mecánico' };
     T.innerHTML = `<section class="card"><h2>Usuarios del taller</h2>
+      <p class="muted small" style="margin:0">Cada usuario solo puede estar abierto en un dispositivo a la vez. Si un equipo se queda con la sesión abierta, puedes cerrarla aquí (o se libera sola tras 10 minutos sin uso).</p>
       <p class="muted small" style="margin:0">Cada persona entra con su usuario y contraseña. Administrador: todo. Recepción y Comercial: agenda, clientes, almacén y facturación (no ven datos bancarios ni configuración). Mecánico: agenda, reparaciones, horas y consulta de almacén (no ve facturación).</p>
-      <div class="tablewrap"><table><thead><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th class="right">€/hora</th><th>Color</th><th>Estado</th><th></th></tr></thead>
-      <tbody>${P.map((p) => `<tr><td><b>${esc(p.nombre)}</b></td><td>${esc(p.usuario)}</td><td>${esc(rolT[p.rol])}</td><td class="right num">${money(p.precio_hora)}</td><td><span style="display:inline-block;width:18px;height:18px;border-radius:50%;background:${attr(hex(p.color, '#1F3A6E'))}"></span></td><td>${p.activo ? '<span class="chip ok">Activo</span>' : '<span class="chip bad">Sin acceso</span>'}</td><td class="right"><button type="button" class="btn sm" data-e="${p.id}">Editar</button></td></tr>`).join('')}</tbody></table></div></section>`;
+      <div class="tablewrap"><table><thead><tr><th>Nombre</th><th>Usuario</th><th>Correo</th><th>Rol</th><th class="right">€/hora</th><th>Color</th><th>Estado</th><th>Conectado</th><th></th></tr></thead>
+      <tbody>${P.map((p) => `<tr><td><b>${esc(p.nombre)}</b></td><td>${esc(p.usuario)}</td><td>${correos[p.id] ? esc(correos[p.id]) : '<span class="muted small">Sin correo</span>'}</td><td>${esc(rolT[p.rol])}</td><td class="right num">${money(p.precio_hora)}</td><td><span style="display:inline-block;width:18px;height:18px;border-radius:50%;background:${attr(hex(p.color, '#1F3A6E'))}"></span></td><td>${p.activo ? '<span class="chip ok">Activo</span>' : '<span class="chip bad">Sin acceso</span>'}</td><td>${conectado(p)}</td><td class="right"><button type="button" class="btn sm" data-e="${p.id}">Editar</button></td></tr>`).join('')}</tbody></table></div></section>`;
+    T.querySelectorAll('[data-cerrar]').forEach((b) => b.addEventListener('click', () => {
+      const p = P.find((x) => x.id === b.dataset.cerrar);
+      modal('Cerrar sesión', `<p style="margin:0">¿Cerrar la sesión de <b>${esc(p.nombre)}</b> en <b>${esc(ses[p.id]?.dispositivo || 'su dispositivo')}</b>? Si está trabajando en ese momento, perderá lo que no haya guardado.</p>`, {
+        okText: 'Cerrar su sesión',
+        onOk: async () => { ok(await sb.rpc('cerrar_sesion_de', { p_user: p.id })); toast('Sesión cerrada'); recargar(); },
+      });
+    }));
     T.querySelectorAll('[data-e]').forEach((b) => b.addEventListener('click', () => {
       const p = P.find((x) => x.id === b.dataset.e); const yo = p.id === state.perfil.id;
       modal(`Editar ${p.nombre}`, `<div class="form">${field('Nombre', 'nombre', p.nombre, 'text', 'maxlength="80"')}
         <div class="field"><label for="f-rol">Rol</label><select id="f-rol" name="rol" ${yo ? 'disabled' : ''}>${Object.entries(rolT).map(([k, t]) => opt(k, t, p.rol)).join('')}</select></div>
+        ${field('Correo (para recuperar la contraseña)', 'correo', correos[p.id] || '', 'email', 'maxlength="120" autocomplete="off"')}
         ${field('Precio por hora (€)', 'precio_hora', p.precio_hora, 'number', 'min="0" step="0.5"')}
         <div class="field"><label for="f-color">Color en la agenda</label><input id="f-color" type="color" name="color" value="${attr(hex(p.color, '#1F3A6E'))}" style="padding:4px"></div>
         <label class="check full"><input type="checkbox" name="activo" ${p.activo ? 'checked' : ''} ${yo ? 'disabled' : ''}> Puede entrar en la aplicación</label></div>`, {
@@ -201,11 +227,21 @@ export async function render(el, params) {
           const o = formData(root);
           const upd = { nombre: o.nombre || p.nombre, precio_hora: Number(o.precio_hora) || 0, color: hex(o.color, '#1F3A6E') };
           if (!yo) { upd.rol = o.rol; upd.activo = o.activo; }
-          ok(await sb.from('perfiles').update(upd).eq('id', p.id)); toast('Usuario guardado'); recargar();
+          ok(await sb.from('perfiles').update(upd).eq('id', p.id));
+          if ((o.correo || '') !== (correos[p.id] || '')) await guardarCorreo(p.id, o.correo);
+          toast('Usuario guardado'); recargar();
         },
       });
     }));
   }
+}
+
+// Correo real de la persona (para "He olvidado mi contraseña"). Vacío = se quita.
+async function guardarCorreo(id, correo) {
+  const c = (correo || '').trim().toLowerCase();
+  if (!c) { if (esAdmin()) ok(await sb.from('usuarios_correo').delete().eq('user_id', id)); return; }
+  if (c.length > 120 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(c)) throw new Error('El correo no es válido');
+  ok(await sb.from('usuarios_correo').upsert({ user_id: id, correo: c }));
 }
 
 // Vuelve a pintar la pantalla entera (menú y avisos cambian con la licencia)
