@@ -167,8 +167,10 @@ function renderLogin(msg = '') {
       <div class="field"><label for="p">Contraseña</label><input id="p" name="password" type="password" autocomplete="current-password" required maxlength="128"></div>
       <div class="err" role="alert">${esc(msg)}</div>
       <button class="btn pri" type="submit">Entrar</button>
+      <button type="button" class="linkbtn" data-olvido>He olvidado mi contraseña</button>
     </form>
   </div>`;
+  app.querySelector('[data-olvido]').addEventListener('click', () => renderOlvido(app.querySelector('#u').value.trim()));
   const f = app.querySelector('form');
   f.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -185,12 +187,132 @@ function renderLogin(msg = '') {
       err.textContent = /rate|many/i.test(error.message) ? 'Demasiados intentos. Espera un momento.' : 'Usuario o contraseña incorrectos.';
       return;
     }
+    try { await reclamarSesion(); } catch (e2) {
+      await sb.auth.signOut({ scope: 'local' });
+      btn.disabled = false; btn.textContent = 'Entrar';
+      err.textContent = /acceso/i.test(e2.message || '') ? 'Este usuario no tiene acceso al taller.' : 'No se ha podido conectar. Inténtalo de nuevo.';
+      return;
+    }
     await arrancar(data.session);
   });
   f.usuario.focus();
 }
 
+// ---------- Una sola sesión por usuario ----------
+// Al entrar con usuario y contraseña, esta sesión pasa a ser la única válida:
+// la base de datos deja de dar datos al otro dispositivo y aquí se le avisa.
+function nombreDispositivo() {
+  const ua = navigator.userAgent;
+  const tipo = /iPad|Tablet/i.test(ua) || (/Android/i.test(ua) && !/Mobile/i.test(ua)) ? 'Tablet' : /Mobi|iPhone|Android/i.test(ua) ? 'Móvil' : 'Ordenador';
+  const nav = /Edg\//.test(ua) ? 'Edge' : /Chrome\//.test(ua) ? 'Chrome' : /Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : 'navegador';
+  return `${tipo} · ${nav}`;
+}
+async function reclamarSesion() {
+  const { error } = await sb.rpc('reclamar_sesion', { p_dispositivo: nombreDispositivo() });
+  if (error) throw error;
+}
+// true si esta sesión sigue siendo la buena. Si otro dispositivo ha entrado, cierra aquí.
+async function comprobarSesion() {
+  const { data, error } = await sb.rpc('sesion_estado');
+  if (error) return true; // sin conexión: no se echa a nadie por un fallo de red
+  if (data?.estado === 'libre') { await reclamarSesion().catch(() => {}); return true; }
+  if (data?.estado !== 'otra') return true;
+  state.perfil = null;
+  await sb.auth.signOut({ scope: 'local' });
+  const cuando = data.desde ? ` a las ${new Date(data.desde).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}` : '';
+  renderLogin(`Se ha cerrado la sesión porque este usuario ha entrado desde otro dispositivo (${data.dispositivo || 'otro equipo'}${cuando}).`);
+  return false;
+}
+let vigilando = false;
+function vigilarSesion() {
+  if (vigilando) return; vigilando = true;
+  const mirar = () => { if (state.perfil) comprobarSesion(); };
+  setInterval(mirar, 30_000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') mirar(); });
+  window.addEventListener('focus', mirar);
+}
+
+// ---------- He olvidado mi contraseña ----------
+function renderOlvido(usuario = '') {
+  app.innerHTML = `
+  <div class="login">
+    <form novalidate>
+      <img class="logo" src="./logo.png" alt="Logo de Sergio Moto Sport">
+      <h1>Recuperar la contraseña</h1>
+      <p class="muted small">Escribe tu usuario. Te enviaremos un enlace al correo que tengas registrado en el taller.</p>
+      <div class="field"><label for="u">Usuario</label><input id="u" name="usuario" autocomplete="username" autocapitalize="none" spellcheck="false" required maxlength="60" value="${attr(usuario.replace(/@.*$/, ''))}"></div>
+      <div class="err" role="alert"></div>
+      <button class="btn pri" type="submit">Enviar enlace</button>
+      <button type="button" class="linkbtn" data-volver>Volver a entrar</button>
+    </form>
+  </div>`;
+  const f = app.querySelector('form');
+  f.querySelector('[data-volver]').addEventListener('click', () => renderLogin());
+  f.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = f.querySelector('button[type=submit]'); const err = f.querySelector('.err');
+    const u = f.usuario.value.trim().toLowerCase().replace(/@.*$/, '');
+    if (!/^[a-z0-9._-]{2,40}$/.test(u)) { err.textContent = 'Usuario no válido.'; return; }
+    btn.disabled = true; btn.textContent = 'Enviando…'; err.textContent = '';
+    const { error } = await sb.functions.invoke('recuperar-clave', { body: { usuario: u } });
+    if (error) { btn.disabled = false; btn.textContent = 'Enviar enlace'; err.textContent = 'No se ha podido enviar. Inténtalo de nuevo en un momento.'; return; }
+    f.innerHTML = `<img class="logo" src="./logo.png" alt="Logo de Sergio Moto Sport"><h1>Revisa tu correo</h1>
+      <p>Si el usuario <b>${esc(u)}</b> tiene un correo registrado, le hemos enviado un enlace para poner una contraseña nueva. Caduca en 1 hora.</p>
+      <p class="muted small">Mira también en correo no deseado. Si no te llega, pide al administrador que revise tu correo en Configuración o que te cambie la contraseña.</p>
+      <button type="button" class="btn pri" data-volver>Volver a entrar</button>`;
+    f.querySelector('[data-volver]').addEventListener('click', () => renderLogin(u));
+  });
+  f.usuario.focus();
+}
+
+// Pantalla del enlace del correo (?clave=...). El enlace solo se usa al pulsar el botón,
+// así los programas de correo que abren enlaces solos no lo gastan.
+function renderNuevaClave(tokenHash) {
+  const limpiarUrl = () => history.replaceState(null, '', location.pathname);
+  app.innerHTML = `
+  <div class="login">
+    <form novalidate>
+      <img class="logo" src="./logo.png" alt="Logo de Sergio Moto Sport">
+      <h1>Nueva contraseña</h1>
+      <div class="field"><label for="pw1">Nueva contraseña</label><input id="pw1" type="password" autocomplete="new-password" required minlength="10" maxlength="128"></div>
+      <div class="field"><label for="pw2">Repetir</label><input id="pw2" type="password" autocomplete="new-password" required maxlength="128"></div>
+      <p class="muted small" style="margin:0">Mínimo 10 caracteres, con mayúsculas, minúsculas y números.</p>
+      <div class="err" role="alert"></div>
+      <button class="btn pri" type="submit">Guardar y entrar</button>
+      <button type="button" class="linkbtn" data-volver>Volver a entrar</button>
+    </form>
+  </div>`;
+  const f = app.querySelector('form');
+  f.querySelector('[data-volver]').addEventListener('click', () => { limpiarUrl(); renderLogin(); });
+  f.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = f.querySelector('button[type=submit]'); const err = f.querySelector('.err');
+    const a = f.querySelector('#pw1').value, b = f.querySelector('#pw2').value;
+    if (a !== b) { err.textContent = 'Las contraseñas no coinciden.'; return; }
+    if (a.length < 10 || !/[a-z]/.test(a) || !/[A-Z]/.test(a) || !/\d/.test(a)) { err.textContent = 'La contraseña no es suficientemente segura.'; return; }
+    btn.disabled = true; btn.textContent = 'Guardando…'; err.textContent = '';
+    const { data, error } = await sb.auth.verifyOtp({ token_hash: tokenHash, type: 'recovery' });
+    if (error || !data.session) {
+      limpiarUrl();
+      renderLogin('El enlace no es válido o ha caducado. Pide otro desde "He olvidado mi contraseña".');
+      return;
+    }
+    const { error: e2 } = await sb.auth.updateUser({ password: a });
+    if (e2) {
+      btn.disabled = false; btn.textContent = 'Guardar y entrar';
+      err.textContent = /same|different/i.test(e2.message) ? 'Tiene que ser distinta de la anterior.' : /weak|short|password/i.test(e2.message) ? 'La contraseña no es suficientemente segura.' : 'No se ha podido guardar. Inténtalo de nuevo.';
+      return;
+    }
+    limpiarUrl();
+    try { await reclamarSesion(); } catch { await sb.auth.signOut({ scope: 'local' }); renderLogin('Este usuario no tiene acceso al taller.'); return; }
+    toast('Contraseña cambiada');
+    await arrancar(data.session);
+  });
+  f.querySelector('#pw1').focus();
+}
+
 async function arrancar(session) {
+  if (!(await comprobarSesion())) return;
   state.user = session.user;
   const { data: perfil } = await sb.from('perfiles').select('*').eq('id', session.user.id).maybeSingle();
   if (!perfil || !perfil.activo) {
@@ -201,6 +323,7 @@ async function arrancar(session) {
   state.perfil = perfil;
   try { await cargarComunes(); } catch (e) { renderLogin('No se ha podido conectar. Inténtalo de nuevo.'); return; }
   route();
+  vigilarSesion();
   // Una vez al entrar (como mucho cada 6 h) se pregunta a la consola cómo está la licencia
   const antes = JSON.stringify(state.licencia);
   refrescarLicencia().then(() => { if (JSON.stringify(state.licencia) !== antes) route(); }).catch((e) => console.warn(e));
@@ -211,6 +334,8 @@ sb.auth.onAuthStateChange((ev) => {
 });
 
 (async () => {
+  const clave = new URLSearchParams(location.search).get('clave');
+  if (clave && /^[A-Za-z0-9_-]{10,200}$/.test(clave)) { await sb.auth.signOut({ scope: 'local' }); renderNuevaClave(clave); return; }
   const { data } = await sb.auth.getSession();
   if (data.session) await arrancar(data.session);
   else renderLogin();
