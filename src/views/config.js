@@ -1,5 +1,6 @@
 import { sb, state, esc, attr, ok, modal, toast, fail, formData, field, area, opt, esAdmin, aplicarTema, cargarComunes, hex, money, fdate, fdt, licEstado, licPlan, MODULOS_CRM, refrescarLicencia, activarLicencia } from '../lib.js';
 import { CONDICIONES_DEF } from './recepcion.js';
+import * as importar from './importar.js';
 
 const TEMAS = [
   ['Sergio Moto Sport', '#1F3A6E', '#111827'], ['Azul marino', '#1E3A8A', '#0B1B36'], ['Pizarra', '#334155', '#1E293B'],
@@ -9,7 +10,7 @@ const TEMAS = [
 export async function render(el, params) {
   const adm = esAdmin();
   const tab = params.t || (adm ? 'taller' : 'perfil');
-  const tabs = adm ? [['taller', 'Datos del taller'], ['apariencia', 'Logo y colores'], ['impuestos', 'Impuestos'], ['tarifas', 'Tarifas'], ['campos', 'Campos personalizados'], ['usuarios', 'Usuarios y permisos'], ['licencia', 'Licencia'], ['perfil', 'Mi perfil']] : [['perfil', 'Mi perfil']];
+  const tabs = adm ? [['taller', 'Datos del taller'], ['apariencia', 'Logo y colores'], ['impuestos', 'Impuestos'], ['tarifas', 'Tarifas'], ['campos', 'Campos personalizados'], ['usuarios', 'Usuarios y permisos'], ['licencia', 'Licencia'], ['importar', 'Importar datos'], ['perfil', 'Mi perfil']] : [['perfil', 'Mi perfil']];
   el.innerHTML = `<div class="head"><div class="t"><h1>Configuración</h1><div class="muted">${adm ? 'Solo el administrador puede cambiar estos ajustes' : 'Los ajustes del taller los gestiona el administrador'}</div></div></div>
   <nav class="tabs">${tabs.map(([k, t]) => `<a href="#/config?t=${k}" class="${k === tab ? 'on' : ''}">${t}</a>`).join('')}</nav><div data-tab></div>`;
   const T = el.querySelector('[data-tab]');
@@ -139,6 +140,8 @@ export async function render(el, params) {
       try { ok(await sb.from('campos_personalizados').delete().eq('id', b.dataset.d)); toast('Campo quitado (los datos ya guardados se conservan)'); recargar(); } catch (e) { fail(e); }
     }));
   }
+
+  if (tab === 'importar') { importar.render(T); return; }
 
   if (tab === 'licencia') {
     const l = state.licencia || {};
