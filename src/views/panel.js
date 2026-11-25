@@ -6,10 +6,10 @@ export async function render(el) {
   const [citas, reps, piezas, facts] = await Promise.all([
     sb.from('citas').select('id,inicio,servicio,estado,tecnico_id,clientes(nombre),motos(marca,modelo,matricula)').gte('inicio', d0.toISOString()).lt('inicio', d1.toISOString()).order('inicio'),
     sb.from('reparaciones').select('id,numero,estado,firma,motivo,clientes(nombre),motos(marca,modelo,matricula)').neq('estado', 'entregada').order('fecha_entrada', { ascending: false }),
-    sb.from('piezas').select('id,referencia,nombre,stock,stock_minimo').order('stock'),
+    sb.from('piezas').select('*').order('stock'),
     puedeFacturar() ? sb.from('facturas').select('total,estado').eq('estado', 'pendiente') : Promise.resolve({ data: [] }),
   ]);
-  const C = ok(citas), R = ok(reps), P = ok(piezas).filter((p) => p.stock <= p.stock_minimo), F = ok(facts);
+  const C = ok(citas), R = ok(reps), P = ok(piezas).filter((p) => p.inventariable !== false && p.stock <= p.stock_minimo), F = ok(facts);
   const sinConfirmar = C.filter((c) => c.estado === 'pendiente').length;
   const listas = R.filter((r) => r.estado === 'lista').length;
   const sinFirma = R.filter((r) => !r.firma).length;

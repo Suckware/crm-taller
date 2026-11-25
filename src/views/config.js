@@ -287,21 +287,22 @@ export async function render(el, params) {
     const vent = (r) => (r.nivel === 'admin' ? '<span class="chip ok">Todas</span>' : VENTANAS.filter(([k]) => r.ventanas.includes(k)).map(([, t]) => `<span class="chip">${esc(t)}</span>`).join(' ') || '<span class="muted small">Solo el panel</span>');
     T.innerHTML = `<section class="card"><div class="head" style="margin:0"><div class="t"><h2 style="margin:0">Roles y ventanas</h2></div><div class="actions"><button type="button" class="btn pri" data-nuevo>Nuevo rol</button></div></div>
       <p class="muted small" style="margin:0">Cada rol decide qué ventanas del menú ve su gente. El panel y "Mi perfil" los ven todos. El Administrador lo ve todo siempre y no se puede cambiar, para que nadie se quede fuera. La base de datos también lo comprueba: sin la ventana Facturación no se pueden leer ni hacer facturas aunque se intente por otro camino.</p>
-      <div class="tablewrap"><table><thead><tr><th>Rol</th><th>Ventanas</th><th>Permisos</th><th>En la agenda</th><th class="right">Usuarios</th><th></th></tr></thead>
-      <tbody>${R.map((r) => `<tr><td><b>${esc(r.nombre)}</b>${r.sistema ? ' <span class="muted small">de serie</span>' : ''}</td><td>${vent(r)}</td><td class="small">${esc(NIVELES[r.nivel] || r.nivel)}</td><td>${r.tecnico ? 'Sí' : 'No'}</td><td class="right num">${usan(r.clave)}</td>
+      <div class="tablewrap"><table><thead><tr><th>Rol</th><th>Ventanas</th><th>Permisos</th><th>Cambia precios</th><th>En la agenda</th><th class="right">Usuarios</th><th></th></tr></thead>
+      <tbody>${R.map((r) => `<tr><td><b>${esc(r.nombre)}</b>${r.sistema ? ' <span class="muted small">de serie</span>' : ''}</td><td>${vent(r)}</td><td class="small">${esc(NIVELES[r.nivel] || r.nivel)}</td><td>${r.nivel === 'admin' || r.cambia_precios ? '<span class="chip ok">Sí</span>' : 'No'}</td><td>${r.tecnico ? 'Sí' : 'No'}</td><td class="right num">${usan(r.clave)}</td>
         <td class="right" style="white-space:nowrap">${r.nivel === 'admin' ? '' : `<button type="button" class="btn sm" data-e="${attr(r.clave)}">Editar</button>`}${r.sistema || usan(r.clave) ? '' : ` <button type="button" class="btn sm" data-b="${attr(r.clave)}">Borrar</button>`}</td></tr>`).join('')}</tbody></table></div></section>`;
     const editar = (r) => {
-      const nuevo = !r; r = r || { nombre: '', nivel: 'taller', ventanas: ['agenda', 'rep'], tecnico: true };
+      const nuevo = !r; r = r || { nombre: '', nivel: 'taller', ventanas: ['agenda', 'rep'], tecnico: true, cambia_precios: false };
       const m = modal(nuevo ? 'Nuevo rol' : `Rol ${r.nombre}`, `<div class="form">${field('Nombre del rol', 'nombre', r.nombre, 'text', 'maxlength="40" required')}
         <div class="field"><label for="f-nivel">Permisos</label><select id="f-nivel" name="nivel">${['oficina', 'taller'].map((k) => opt(k, NIVELES[k], r.nivel)).join('')}</select></div>
         <fieldset class="full" style="border:1px solid var(--line, #e5e7eb);border-radius:10px;padding:10px 12px;margin:0"><legend class="small" style="padding:0 6px">Ventanas que ve</legend>
           <div style="display:flex;flex-wrap:wrap;gap:6px 18px">${VENTANAS.map(([k, t]) => `<label class="check"><input type="checkbox" name="v_${k}" ${r.ventanas.includes(k) ? 'checked' : ''}> ${esc(t)}</label>`).join('')}</div>
           <p class="muted small" data-avisofact style="margin:6px 0 0">Facturación solo se puede dar con permisos de Oficina, y solo se ve en ordenador.</p></fieldset>
+        <label class="check full"><input type="checkbox" name="cambia_precios" ${r.cambia_precios ? 'checked' : ''}> Puede cambiar el precio y el descuento de las líneas en las órdenes (piezas, artículos y horas)</label>
         <label class="check full"><input type="checkbox" name="tecnico" ${r.tecnico ? 'checked' : ''}> Sale en la lista de mecánicos para asignar citas y horas</label></div>`, {
         onOk: async (root) => {
           const o = formData(root);
           if (!o.nombre || o.nombre.length < 2) throw new Error('Escribe el nombre del rol');
-          const fila = { nombre: o.nombre, nivel: o.nivel === 'oficina' ? 'oficina' : 'taller', ventanas: VENTANAS.map(([k]) => k).filter((k) => o['v_' + k]), tecnico: !!o.tecnico };
+          const fila = { nombre: o.nombre, nivel: o.nivel === 'oficina' ? 'oficina' : 'taller', ventanas: VENTANAS.map(([k]) => k).filter((k) => o['v_' + k]), tecnico: !!o.tecnico, cambia_precios: !!o.cambia_precios };
           if (nuevo) {
             const base = o.nombre.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 24) || 'rol';
             let clave = base.length < 2 ? 'rol_' + base : base; let n = 2;

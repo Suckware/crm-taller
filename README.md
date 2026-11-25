@@ -62,3 +62,10 @@ Configuración › **Usuarios**: en cada persona se marca desde qué equipos pue
 - **Fase 1 · datos preparados para sincronizar.** Las tablas que irán a la copia local del taller tienen `uid` (código único que no cambia) y `updated_at` (lo pone la base de datos). Los borrados se apuntan en `borrados` (solo tabla y código). Datos bancarios, remesas, sesiones y el registro de cambios nunca irán a la copia local.
 - **Fase 2 · aviso para no solapar citas.** Configuración › **Equipo del taller** (solo administrador): se marca el ordenador del taller. Ese ordenador manda una señal de vida cada minuto mientras el programa está abierto. Si pasa más de X minutos sin señal (3 por defecto) y no se cerró de forma normal, la agenda y la pantalla de nueva cita de los demás muestran un aviso amarillo. Si todo está bien, no sale nada. El aviso nunca impide guardar.
 - La hora la calcula el servidor (`estado_sync()`), no el dispositivo.
+
+## Artículos NO INVENTARIABLE, unidades y cajas
+
+- Cada artículo del almacén es **Inventariable** (lleva stock) o **NO INVENTARIABLE** (horas de trabajo, banco de potencia, reprogramaciones…: no suma ni resta stock ni da avisos).
+- Cada artículo se vende por una unidad (unidad, hora, litro, metro, kilo, juego o servicio) y el PVP es por esa unidad. Si viene en cajas se indica cuántas unidades trae: el stock va siempre en unidades, y en compras y órdenes se elige caja o unidades sueltas.
+- En la orden, descripción, cantidad, precio y descuento de cada línea se cambian ahí mismo; al cambiar la cantidad el stock se ajusta con la diferencia. Con la orden ya facturada no se pueden cambiar.
+- Cambiar precios y descuentos depende del permiso del rol (Configuración › Roles y ventanas › "Puede cambiar el precio…"). Lo comprueba la base de datos (`supabase/migrations/20261125090000_articulos_unidades_lineas.sql`).

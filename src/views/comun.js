@@ -295,7 +295,7 @@ export { attr };
 // orden y, si ya está facturada, la factura. Sirve tanto para la ficha de la pieza como para la del cliente.
 export async function cargarVentas({ pieza, cliente }) {
   let q = sb.from('reparacion_piezas')
-    .select('id,cantidad,pvp,created_at,pieza_id,piezas(id,referencia,nombre),reparaciones!inner(id,numero,estado,fecha_entrada,fecha_fin,cliente_id,clientes(id,nombre),motos(marca,modelo,matricula))')
+    .select('*,piezas(id,referencia,nombre),reparaciones!inner(id,numero,estado,fecha_entrada,fecha_fin,cliente_id,clientes(id,nombre),motos(marca,modelo,matricula))')
     .order('created_at', { ascending: false }).limit(1000);
   if (pieza) q = q.eq('pieza_id', pieza);
   if (cliente) q = q.eq('reparaciones.cliente_id', cliente);
@@ -316,11 +316,12 @@ export async function cargarVentas({ pieza, cliente }) {
 
 export function tablaVentas(T, V, { porPieza }) {
   const clientes = new Set(V.map((v) => v.reparaciones.cliente_id)).size;
-  const uds = V.reduce((s, v) => s + v.cantidad, 0);
-  const importe = V.reduce((s, v) => s + v.cantidad * v.pvp, 0);
+  const uds = V.reduce((s, v) => s + Number(v.cantidad), 0);
+  const imp = (v) => v.cantidad * v.pvp * (1 - (Number(v.dto_pct) || 0) / 100);
+  const importe = V.reduce((s, v) => s + imp(v), 0);
   const fac = puedeFacturar();
   T.innerHTML = `
-  <div class="kpis"><div class="kpi"><span class="l">Unidades vendidas</span><span class="v">${uds}</span></div>
+  <div class="kpis"><div class="kpi"><span class="l">Unidades vendidas</span><span class="v">${uds.toLocaleString('es-ES')}</span></div>
     <div class="kpi"><span class="l">${porPieza ? 'Clientes distintos' : 'Piezas distintas'}</span><span class="v">${porPieza ? clientes : new Set(V.map((v) => v.pieza_id)).size}</span></div>
     <div class="kpi"><span class="l">Importe (PVP)</span><span class="v">${money(importe)}</span></div></div>
   <div class="agenda-bar"><input type="search" class="search" data-qv placeholder="${porPieza ? 'Buscar por cliente, matrícula, moto u orden…' : 'Buscar por pieza, referencia, matrícula u orden…'}" aria-label="Buscar en el histórico"></div>
@@ -334,7 +335,7 @@ export function tablaVentas(T, V, { porPieza }) {
         <div class="small muted show-movil">${fdate(v.created_at)}${moto ? ' · ' + esc(moto) : ''}</div></td>
       <td class="hide-movil small">${esc(moto)}</td>
       <td><a href="#/reparacion/${r.id}" style="white-space:nowrap">${esc(r.numero)}</a> ${chip(ESTADOS_REP, r.estado)}${fac ? `<div class="small">${f ? `<a href="#/factura/${f.id}">Factura ${esc(f.numero)}</a>${f.estado === 'anulada' ? ' <span class="chip bad">anulada</span>' : ''}` : '<span class="muted">Sin facturar</span>'}</div>` : ''}</td>
-      <td class="right num"><b>${v.cantidad}</b></td><td class="right num hide-movil">${money(v.pvp)}</td><td class="right num">${money(v.cantidad * v.pvp)}</td></tr>`; }).join('') || `<tr><td colspan="7" class="empty">${porPieza ? 'Esta pieza aún no se ha vendido ni montado a ningún cliente' : 'Este cliente aún no tiene piezas'}</td></tr>`}</tbody>
+      <td class="right num"><b>${Number(v.cantidad).toLocaleString('es-ES')}</b>${v.en_cajas ? '<div class="small muted">cajas</div>' : ''}</td><td class="right num hide-movil">${money(v.pvp)}</td><td class="right num">${money(imp(v))}</td></tr>`; }).join('') || `<tr><td colspan="7" class="empty">${porPieza ? 'Esta pieza aún no se ha vendido ni montado a ningún cliente' : 'Este cliente aún no tiene piezas'}</td></tr>`}</tbody>
   </table></div></section>`;
   const q = T.querySelector('[data-qv]');
   q.addEventListener('input', () => { const s = q.value.toLowerCase().trim(); T.querySelectorAll('tr[data-txt]').forEach((tr) => { tr.style.display = !s || tr.dataset.txt.includes(s) ? '' : 'none'; }); });
@@ -344,7 +345,7 @@ export function tablaVentas(T, V, { porPieza }) {
 // Busca en la base de datos según se escribe, así va rápido aunque haya miles de piezas.
 // Con lector de código de barras: el lector escribe el código y pulsa Intro; si coincide
 // exactamente con un código de barras o una referencia, se elige la pieza directamente.
-export const SEL_PIEZA_BUSCAR = 'id,referencia,nombre,marca,codigo_barras,stock,stock_minimo,pvp,precio_compra,proveedor_id,ubicacion';
+export const SEL_PIEZA_BUSCAR = '*';
 const limpiarBusqueda = (s) => (s || '').replace(/[%,()*"\\]/g, ' ').trim().slice(0, 60);
 
 export function buscadorPiezas(cont, { onPick, fila, placeholder } = {}) {
@@ -355,7 +356,7 @@ export function buscadorPiezas(cont, { onPick, fila, placeholder } = {}) {
   const inp = cont.querySelector('[data-bq]'), res = cont.querySelector('[data-bres]'), msg = cont.querySelector('[data-bmsg]');
   let P = [], turno = 0, t;
   const pintar = () => {
-    res.innerHTML = P.map((p) => fila ? fila(p) : `<button type="button" class="pick" data-pick="${p.id}"><span class="grow"><b>${esc(p.nombre)}</b><span class="muted small">${esc(p.referencia)}${p.codigo_barras ? ' · ' + esc(p.codigo_barras) : ''}${p.ubicacion ? ' · ' + esc(p.ubicacion) : ''}</span></span><b style="color:${p.stock > 0 ? 'var(--ok)' : 'var(--bad)'}">stock ${p.stock}</b></button>`).join('');
+    res.innerHTML = P.map((p) => fila ? fila(p) : `<button type="button" class="pick" data-pick="${p.id}"><span class="grow"><b>${esc(p.nombre)}</b><span class="muted small">${esc(p.referencia)}${p.codigo_barras ? ' · ' + esc(p.codigo_barras) : ''}${p.ubicacion ? ' · ' + esc(p.ubicacion) : ''}</span></span>${p.inventariable === false ? '<span class="chip">NO INVENTARIABLE</span>' : `<b style="color:${p.stock > 0 ? 'var(--ok)' : 'var(--bad)'}">stock ${p.stock}</b>`}</button>`).join('');
     res.querySelectorAll('[data-pick]').forEach((b) => b.addEventListener('click', () => onPick?.(P.find((x) => x.id == b.dataset.pick), b)));
   };
   async function buscar(exacto) {

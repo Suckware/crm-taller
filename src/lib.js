@@ -70,10 +70,10 @@ export const DISPOSITIVOS = [['acceso_ios', 'iPhone / iPad'], ['acceso_android',
 export const rol = () => state.perfil?.rol;
 // Los de serie, por si la base de datos aún no tiene la tabla de roles
 const ROLES_SERIE = [
-  { clave: 'admin', nombre: 'Administrador', nivel: 'admin', ventanas: ['agenda', 'rep', 'clientes', 'almacen', 'fact'], tecnico: true, sistema: true },
-  { clave: 'recepcion', nombre: 'Recepción', nivel: 'oficina', ventanas: ['agenda', 'rep', 'clientes', 'almacen', 'fact'], tecnico: true, sistema: true },
-  { clave: 'comercial', nombre: 'Comercial', nivel: 'oficina', ventanas: ['agenda', 'rep', 'clientes', 'almacen', 'fact'], tecnico: false, sistema: true },
-  { clave: 'mecanico', nombre: 'Mecánico', nivel: 'taller', ventanas: ['agenda', 'rep', 'clientes', 'almacen'], tecnico: true, sistema: true },
+  { clave: 'admin', nombre: 'Administrador', nivel: 'admin', ventanas: ['agenda', 'rep', 'clientes', 'almacen', 'fact'], tecnico: true, sistema: true, cambia_precios: true },
+  { clave: 'recepcion', nombre: 'Recepción', nivel: 'oficina', ventanas: ['agenda', 'rep', 'clientes', 'almacen', 'fact'], tecnico: true, sistema: true, cambia_precios: true },
+  { clave: 'comercial', nombre: 'Comercial', nivel: 'oficina', ventanas: ['agenda', 'rep', 'clientes', 'almacen', 'fact'], tecnico: false, sistema: true, cambia_precios: true },
+  { clave: 'mecanico', nombre: 'Mecánico', nivel: 'taller', ventanas: ['agenda', 'rep', 'clientes', 'almacen'], tecnico: true, sistema: true, cambia_precios: false },
 ];
 export const rolDe = (clave) => (state.roles.length ? state.roles : ROLES_SERIE).find((r) => r.clave === clave);
 export const nombreRol = (clave) => rolDe(clave)?.nombre || clave || '';
@@ -81,6 +81,16 @@ const nivel = () => rolDe(rol())?.nivel || 'taller';
 export const esOficina = () => ['admin', 'oficina'].includes(nivel());
 export const esAdmin = () => nivel() === 'admin';
 export const puedeVentana = (v) => esAdmin() || !!rolDe(rol())?.ventanas?.includes(v);
+// Permiso del rol para cambiar precio y descuento en las líneas de las órdenes (lo comprueba también la base de datos)
+export const puedeCambiarPrecios = () => esAdmin() || (rolDe(rol())?.cambia_precios ?? esOficina());
+// ---------- Artículos: tipo y unidad de venta ----------
+// unidad: [singular, plural, abreviatura]
+export const UNIDADES = { unidad: ['unidad', 'unidades', 'ud.'], hora: ['hora', 'horas', 'h'], litro: ['litro', 'litros', 'l'], metro: ['metro', 'metros', 'm'], kg: ['kilo', 'kilos', 'kg'], juego: ['juego', 'juegos', 'jgo.'], servicio: ['servicio', 'servicios', 'serv.'] };
+export const esInventariable = (p) => p?.inventariable !== false;
+export const udAbr = (p) => (UNIDADES[p?.unidad] || UNIDADES.unidad)[2];
+export const udNombre = (p, n = 2) => (UNIDADES[p?.unidad] || UNIDADES.unidad)[Number(n) === 1 ? 0 : 1];
+export const stockBajo = (p) => esInventariable(p) && p.stock <= p.stock_minimo;
+export const numES = (n) => Number(n || 0).toLocaleString('es-ES', { maximumFractionDigits: 3 });
 export const esEscritorio = () => window.matchMedia('(min-width: 1101px)').matches;
 export const puedeFacturar = () => esOficina() && esEscritorio() && puedeVentana('fact');
 export const nombreTecnico = (id) => state.perfiles.find((p) => p.id === id)?.nombre || 'Sin asignar';
